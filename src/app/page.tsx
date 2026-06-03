@@ -61,6 +61,22 @@ type ExerciseRecord = {
   sets: SetRecord[];
 };
 
+type UserProfile = {
+  goals: string;
+  experience: string;
+  limitations: string;
+  preferences: string;
+  equipment: string;
+};
+
+const INITIAL_PROFILE: UserProfile = {
+  goals: "健康維持と筋肥大",
+  experience: "初心者〜中級者",
+  limitations: "なし（痛みやケガなし）",
+  preferences: "特になし",
+  equipment: "ジムのフル器具"
+};
+
 // -------------------------------------------------------------
 // 初期モックデータ
 // -------------------------------------------------------------
@@ -97,6 +113,7 @@ export default function Home() {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [dateStates, setDateStates] = useState<DateStates>({});
   const [streak, setStreak] = useState(0);
+  const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_PROFILE);
 
   // --- Undo（元に戻す）用の状態 ---
   const [previousSchedule, setPreviousSchedule] = useState<ScheduleItem[] | null>(null);
@@ -139,24 +156,26 @@ export default function Home() {
   // 1. 初期ロード
   useEffect(() => {
     if (typeof window !== "undefined") {
-      // 旧 Fitrum から 新 Fitrum へのデータ移行
+      // 旧 AuraFit から 新 Fitrum へのデータ移行
       const migrate = (oldKey: string, newKey: string) => {
         const val = localStorage.getItem(oldKey);
         if (val && !localStorage.getItem(newKey)) {
           localStorage.setItem(newKey, val);
         }
       };
-      migrate("fitrum_api_key", "fitrum_api_key");
-      migrate("fitrum_menus", "fitrum_menus");
-      migrate("fitrum_schedule", "fitrum_schedule");
-      migrate("fitrum_date_states", "fitrum_date_states");
-      migrate("fitrum_streak", "fitrum_streak");
+      migrate("aurafit_api_key", "fitrum_api_key");
+      migrate("aurafit_menus", "fitrum_menus");
+      migrate("aurafit_schedule", "fitrum_schedule");
+      migrate("aurafit_date_states", "fitrum_date_states");
+      migrate("aurafit_streak", "fitrum_streak");
+      migrate("aurafit_user_profile", "fitrum_user_profile");
 
       const savedKey = localStorage.getItem("fitrum_api_key");
       const savedMenus = localStorage.getItem("fitrum_menus");
       const savedSchedule = localStorage.getItem("fitrum_schedule");
       const savedDateStates = localStorage.getItem("fitrum_date_states");
       const savedStreak = localStorage.getItem("fitrum_streak");
+      const savedProfile = localStorage.getItem("fitrum_user_profile");
 
       let loadedMenus = INITIAL_MENUS;
       if (savedKey) {
@@ -173,6 +192,7 @@ export default function Home() {
       if (savedSchedule) setSchedule(JSON.parse(savedSchedule));
       if (savedDateStates) setDateStates(JSON.parse(savedDateStates));
       if (savedStreak) setStreak(parseInt(savedStreak, 10));
+      if (savedProfile) setUserProfile(JSON.parse(savedProfile));
 
       const tempDates = [];
       const today = new Date();
@@ -266,6 +286,17 @@ export default function Home() {
     setSpecificDateState(dateStr, next);
   };
 
+  const getUserProfileContext = () => {
+    return `
+【ユーザーカルテ（過去チャット引き継ぎコンテキスト）】
+- 筋トレ目標: ${userProfile.goals}
+- 経験・現在の頻度: ${userProfile.experience}
+- ケガ・身体の制限・注意点: ${userProfile.limitations}
+- トレーニングの好み・スタイル: ${userProfile.preferences}
+- 使用可能器具: ${userProfile.equipment}
+`;
+  };
+
   // -------------------------------------------------------------
   // クライアントサイドでの Gemini API 呼び出し
   // -------------------------------------------------------------
@@ -296,7 +327,9 @@ export default function Home() {
 
       const prompt = `
 あなたは科学的エビデンス（運動生理学・スポーツ科学）に基づく一流のパーソナルトレーナーです。
-ユーザーが選択したカレンダー日程に対し、登録されている「基本メニュー（種目内容・設定重量・回数）」を深く分析し、怪我のリスクを最小化し回復を最大化する最適な1ヶ月分のスケジュール（筋トレ予定の配置）を作成してください。
+ユーザーが選択したカレンダー日程に対し、登録されている「基本メニュー（种目内容・設定重量・回数）」を深く分析し、怪我のリスクを最小化し回復を最大化する最適な1ヶ月分のスケジュール（筋トレ予定の配置）を作成してください。
+
+${getUserProfileContext()}
 
 【ユーザーデータ】
 - 確定している行ける日 (confirmedDays): [${confirmedDays.join(", ")}]
@@ -423,6 +456,8 @@ export default function Home() {
       const prompt = `
 ユーザーの今日の実績を分析し、次回の「基本メニュー」の目標重量・回数・セット数を決定し、褒め言葉を生成してください。
 今回は「その日限りの調整メニュー」で実施した可能性がありますが、提案は「基本メニューの更新」に対して行ってください。
+
+${getUserProfileContext()}
 
 【基本メニューの設定】
 ${JSON.stringify(baseExercises, null, 2)}
@@ -597,6 +632,8 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       const prompt = `
 ユーザーの「今日の体調」と「時間制限」に基づいて、基本メニューを「今日限りの調整メニュー」に科学的に最適化（セット数の削減、重量の加減、補助種目のカットなど）してください。
 
+${getUserProfileContext()}
+
 【今日の基本メニュー】
 ${JSON.stringify(baseExercises, null, 2)}
 
@@ -694,6 +731,39 @@ ${JSON.stringify(baseExercises, null, 2)}
       return;
     }
 
+    // --- ハイブリッドインポートの判定 (JSONコピペの場合はAPIを通さず処理) ---
+    if (builderAction === "import") {
+      const trimmedText = aiRequestText.trim();
+      if (trimmedText.startsWith("{") && trimmedText.endsWith("}")) {
+        try {
+          const parsedData = JSON.parse(trimmedText);
+          if (parsedData.menus || parsedData.profile) {
+            if (parsedData.menus && Object.keys(menus).length > 0) {
+              const confirmed = window.confirm(
+                "警告: 現在設定されているすべての基本メニューが、貼り付けられたJSONメニューで上書き（上書き消去）されます。\nよろしいですか？"
+              );
+              if (!confirmed) return;
+            }
+
+            if (parsedData.menus) {
+              setMenus(parsedData.menus);
+              setEditableMenus(JSON.parse(JSON.stringify(parsedData.menus)));
+              saveToLocalStorage("fitrum_menus", parsedData.menus);
+            }
+            if (parsedData.profile) {
+              setUserProfile(parsedData.profile);
+              saveToLocalStorage("fitrum_user_profile", parsedData.profile);
+            }
+
+            setAiBuilderResponse("専用JSONからプロフィール（カルテ）とメニューのインポートが瞬時に成功しました！（API通信はスキップされました）");
+            return;
+          }
+        } catch (e) {
+          console.log("貼り付けられたテキストは有効なJSONではありませんでした。通常のAI解析にフォールバックします。");
+        }
+      }
+    }
+
     setLoading(true);
     setAiBuilderResponse("");
     try {
@@ -744,15 +814,22 @@ ${JSON.stringify(menus, null, 2)}
 `;
       } else if (builderAction === "import") {
         prompt = `
-ユーザーがこれまで行っていた過去の筋トレ内容（メモ、日記、雑多なテキスト）を解析し、アプリ用の筋トレメニューとしてインポート可能なJSON構造にパースしてください。
+ユーザーがこれまで行っていた過去の筋トレ内容や会話履歴（日記、雑多なテキスト）を解析し、アプリ用の筋トレメニューとユーザープロファイル（カルテ）をインポート可能なJSON構造にパースしてください。
 
 【ユーザーの入力テキスト】
 "${aiRequestText}"
 
-以下のJSONフォーマットで回答してください。
+以下のJSONフォーマットで回答してください。余計な説明テキストは含めないでください。
 
 【出力フォーマット】
 {
+  "profile": {
+    "goals": "ユーザーの目標",
+    "experience": "トレーニング経験や頻度",
+    "limitations": "ケガや痛み、避けるべき種目・注意点",
+    "preferences": "トレーニングの好み",
+    "equipment": "使用可能な器具"
+  },
   "menus": {
     "A": [
       { "name": "種目名", "weight": 60, "reps": 10, "sets": 3 }
@@ -767,14 +844,14 @@ ${JSON.stringify(menus, null, 2)}
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          systemInstruction: "JSONフォーマットでメニューデータのみを出力してください。",
+          systemInstruction: "JSONフォーマットでメニューデータおよびカルテデータのみを出力してください。",
         },
       });
 
       const data = JSON.parse(response.text || "{}");
 
-      if ((builderAction === "create" || builderAction === "import") && data.menus) {
-        if (Object.keys(menus).length > 0) {
+      if ((builderAction === "create" || builderAction === "import") && (data.menus || data.profile)) {
+        if (data.menus && Object.keys(menus).length > 0) {
           const actionName = builderAction === "create" ? "AI新規作成" : "過去メニュー取り込み";
           const confirmed = window.confirm(
             `警告: 現在設定されているすべての基本メニューが、${actionName}によって作成されたメニューで上書き（上書き消去）されます。\nよろしいですか？`
@@ -784,12 +861,18 @@ ${JSON.stringify(menus, null, 2)}
             return;
           }
         }
-        setMenus(data.menus);
-        setEditableMenus(JSON.parse(JSON.stringify(data.menus)));
-        saveToLocalStorage("fitrum_menus", data.menus);
+        if (data.menus) {
+          setMenus(data.menus);
+          setEditableMenus(JSON.parse(JSON.stringify(data.menus)));
+          saveToLocalStorage("fitrum_menus", data.menus);
+        }
+        if (data.profile) {
+          setUserProfile(data.profile);
+          saveToLocalStorage("fitrum_user_profile", data.profile);
+        }
         setAiBuilderResponse(
           builderAction === "import" 
-            ? "過去のメニューの解析とインポートが成功しました！現在の基本メニューに反映されました。"
+            ? "過去のメニューおよびユーザーカルテの解析とインポートが成功しました！現在の基本メニューおよびAIカルテに反映されました。"
             : "新しいメニューを作成し、適用しました！カレンダーに戻り、「AIスケジュール構築」を実行してください。"
         );
       } else if (builderAction === "improve" && data.updatedMenus) {
@@ -819,6 +902,8 @@ ${JSON.stringify(menus, null, 2)}
       const prompt = `
 ユーザーは現在「${exerciseName}」を行う予定ですが、以下の理由により代替種目を求めています。
 代わりとなる筋トレ種目を3つ提案してください。
+
+${getUserProfileContext()}
 
 【状況】
 - 代替したい種目: "${exerciseName}"
@@ -1393,21 +1478,120 @@ ${JSON.stringify(menus, null, 2)}
                 </div>
               </div>
             ) : builderAction === "import" ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                <label style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                  以前行っていたメニューのテキストを貼り付け（AIが自動パースします）
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div style={{ background: "rgba(255,255,255,0.03)", padding: "10px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                  <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "var(--color-primary)", display: "block", marginBottom: "4px" }}>
+                    💡 過去チャットからの完璧なデータ移行方法
+                  </span>
+                  <p style={{ fontSize: "0.68rem", color: "var(--text-muted)", lineHeight: "1.4" }}>
+                    以前使っていたGemini等のチャットに「専用プロンプト」を送信し、出力されたJSONテキストをそのまま貼り付けることで、メニューとAIカルテが正確に移行されます。
+                  </p>
+                  <button 
+                    className={styles.btnSecondary} 
+                    style={{ padding: "6px 12px", fontSize: "0.7rem", marginTop: "8px", width: "100%" }}
+                    onClick={() => {
+                      const promptTemplate = `これまでの私たちの筋トレ管理のチャット履歴や私の状況（設定メニュー、目標、これまでの実績、ケガの情報、好みなど）をすべて要約し、以下のJSON形式で出力してください。余計な説明文は含めず、純粋なJSONテキストのみを出力してください。\n\n【出力JSONフォーマット】\n{\n  "profile": {\n    "goals": "あなたの筋トレ目標",\n    "experience": "これまでの経験や頻度など",\n    "limitations": "ケガや痛み、避けるべき種目・動作などの注意点",\n    "preferences": "好きな種目やトレーニングスタイルの好み",\n    "equipment": "使用可能な器具"\n  },\n  "menus": {\n    "A": [\n      { "name": "種目名", "weight": 重量kg, "reps": 回数, "sets": セット数 }\n    ],\n    "B": [ ... ]\n  }\n}`;
+                      navigator.clipboard.writeText(promptTemplate);
+                      alert("過去チャット用指示プロンプトをクリップボードにコピーしました！以前のチャットへ貼り付けてください。");
+                    }}
+                  >
+                    過去チャット用の指示プロンプトをコピー
+                  </button>
+                </div>
+
+                <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "2px" }}>
+                  以前のメニューテキスト、または出力された専用JSONを貼り付け
                 </label>
                 <textarea 
                   className={styles.textInput} 
                   rows={4} 
-                  style={{ resize: "none", width: "100%" }}
-                  placeholder="例: 月曜：ベンチプレス60kg 10回3セット。木曜：スクワット80kg 8回3セット..."
+                  style={{ resize: "none", width: "100%", fontSize: "0.75rem" }}
+                  placeholder='{"profile": {...}, "menus": {...}} または 雑多な履歴日記テキスト...'
                   value={aiRequestText}
                   onChange={(e) => setAiRequestText(e.target.value)}
                 />
                 <button className={styles.btnPrimary} onClick={handleAIBuilderSubmit}>
-                  テキストからメニューを取り込む
+                  データをインポートする
                 </button>
+
+                {/* AIカルテ（引き継ぎ情報）の表示・手動修正フォーム */}
+                <div style={{ marginTop: "16px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "16px" }}>
+                  <span style={{ fontSize: "0.8rem", fontWeight: "700", display: "block", marginBottom: "8px" }}>
+                    📋 現在のAIカルテ（引き継ぎコンテキスト情報）
+                  </span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div>
+                      <label style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>筋トレ目標</label>
+                      <input 
+                        type="text" 
+                        className={styles.textInput} 
+                        style={{ width: "100%", padding: "4px 8px", fontSize: "0.75rem" }} 
+                        value={userProfile.goals} 
+                        onChange={(e) => {
+                          const updated = { ...userProfile, goals: e.target.value };
+                          setUserProfile(updated);
+                          saveToLocalStorage("fitrum_user_profile", updated);
+                        }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>経験・頻度</label>
+                      <input 
+                        type="text" 
+                        className={styles.textInput} 
+                        style={{ width: "100%", padding: "4px 8px", fontSize: "0.75rem" }} 
+                        value={userProfile.experience} 
+                        onChange={(e) => {
+                          const updated = { ...userProfile, experience: e.target.value };
+                          setUserProfile(updated);
+                          saveToLocalStorage("fitrum_user_profile", updated);
+                        }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.65rem", color: "var(--status-no)", fontWeight: "600" }}>ケガ・身体の制限・注意点</label>
+                      <input 
+                        type="text" 
+                        className={styles.textInput} 
+                        style={{ width: "100%", padding: "4px 8px", fontSize: "0.75rem" }} 
+                        value={userProfile.limitations} 
+                        onChange={(e) => {
+                          const updated = { ...userProfile, limitations: e.target.value };
+                          setUserProfile(updated);
+                          saveToLocalStorage("fitrum_user_profile", updated);
+                        }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>トレーニングの好み・スタイル</label>
+                      <input 
+                        type="text" 
+                        className={styles.textInput} 
+                        style={{ width: "100%", padding: "4px 8px", fontSize: "0.75rem" }} 
+                        value={userProfile.preferences} 
+                        onChange={(e) => {
+                          const updated = { ...userProfile, preferences: e.target.value };
+                          setUserProfile(updated);
+                          saveToLocalStorage("fitrum_user_profile", updated);
+                        }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>使用可能器具</label>
+                      <input 
+                        type="text" 
+                        className={styles.textInput} 
+                        style={{ width: "100%", padding: "4px 8px", fontSize: "0.75rem" }} 
+                        value={userProfile.equipment} 
+                        onChange={(e) => {
+                          const updated = { ...userProfile, equipment: e.target.value };
+                          setUserProfile(updated);
+                          saveToLocalStorage("fitrum_user_profile", updated);
+                        }} 
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
