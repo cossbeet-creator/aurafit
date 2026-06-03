@@ -40,7 +40,6 @@ type ScheduleItem = {
   workoutName: string;
   isTemp: boolean;
   completed?: boolean;
-  // 【新設】その日限りのカスタマイズメニュー (基本メニューのオーバーライド)
   customExercises?: Exercise[];
   adjustmentReason?: string;
 };
@@ -98,6 +97,11 @@ export default function Home() {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [dateStates, setDateStates] = useState<DateStates>({});
   const [streak, setStreak] = useState(0);
+
+  // --- Undo（元に戻す）用の状態 ---
+  const [previousSchedule, setPreviousSchedule] = useState<ScheduleItem[] | null>(null);
+  const [previousDateStates, setPreviousDateStates] = useState<DateStates | null>(null);
+  const [showUndoBanner, setShowUndoBanner] = useState(false);
 
   // --- カレンダー描画用状態 ---
   const [dates, setDates] = useState<Date[]>([]);
@@ -195,6 +199,48 @@ export default function Home() {
     return `${year}-${month}-${day}`;
   };
 
+  // Undo用バックアップ作成
+  const backupScheduleForUndo = (currentStates: DateStates) => {
+    setPreviousSchedule(JSON.parse(JSON.stringify(schedule)));
+    setPreviousDateStates(JSON.parse(JSON.stringify(currentStates)));
+    setShowUndoBanner(true);
+  };
+
+  // Undo実行
+  const undoLastSlide = () => {
+    if (previousSchedule) {
+      setSchedule(previousSchedule);
+      saveToLocalStorage("aurafit_schedule", previousSchedule);
+    }
+    if (previousDateStates) {
+      setDateStates(previousDateStates);
+      saveToLocalStorage("aurafit_date_states", previousDateStates);
+    }
+    setPreviousSchedule(null);
+    setPreviousDateStates(null);
+    setShowUndoBanner(false);
+  };
+
+  // 特定の日付の状態を直接設定する
+  const setSpecificDateState = (dateStr: string, next: DateState) => {
+    const newStates = { ...dateStates, [dateStr]: next };
+    
+    // 「行けない日 (CONFIRMED_NO)」に切り替わった場合、もし未完了の予定があれば自動スライド
+    if (next === "CONFIRMED_NO") {
+      const scheduled = schedule.find(item => item.date === dateStr);
+      if (scheduled && scheduled.workoutName && !scheduled.completed) {
+        backupScheduleForUndo(dateStates);
+        setDateStates(newStates);
+        saveToLocalStorage("aurafit_date_states", newStates);
+        slideWorkout(dateStr);
+        return;
+      }
+    }
+
+    setDateStates(newStates);
+    saveToLocalStorage("aurafit_date_states", newStates);
+  };
+
   // 日付状態トグル
   const toggleDateState = (dateStr: string) => {
     const current = dateStates[dateStr] || "DEFAULT";
@@ -204,12 +250,12 @@ export default function Home() {
     else if (current === "CONFIRMED_NO") next = "MAYBE";
     else if (current === "MAYBE") next = "DEFAULT";
 
-    const newStates = { ...dateStates, [dateStr]: next };
-    setDateStates(newStates);
-    saveToLocalStorage("aurafit_date_states", newStates);
+    setSpecificDateState(dateStr, next);
   };
 
-  // Gemini API 取得
+  // -------------------------------------------------------------
+  // クライアントサイドでの Gemini API 呼び出し
+  // -------------------------------------------------------------
   const getAiInstance = () => {
     if (!apiKey) {
       alert("AI機能を使用するにはGemini APIキーを設定してください。");
@@ -303,7 +349,6 @@ export default function Home() {
     if (scheduled && !scheduled.completed) {
       setCurrentWorkoutName(scheduled.workoutName);
       
-      // AI調整がある場合はそれを優先、無ければ基本メニュー
       const exerciseList = scheduled.customExercises || menus[scheduled.workoutName] || [];
       setActiveAdjustmentReason(scheduled.adjustmentReason || "");
 
@@ -359,7 +404,7 @@ export default function Home() {
     setLoading(true);
     try {
       const ai = getAiInstance();
-      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "");
+      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0];
       const baseExercises = menus[pureWorkoutName] || [];
 
       const prompt = `
@@ -375,7 +420,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
 
 【重量設定ルール】
 - 実施した各セットにおいて、基本メニューの目標重量・回数をクリアしている場合 ➔ 次回増量。
-- 疲労による調整などでセット数や重量を減らしていた場合は、無理に増量せず「維持」を推奨してください。
+- 疲労による調整などでセット数や重量を減らしていた場合は、維持を推奨してください。
 
 【出力フォーマット】
 {
@@ -424,7 +469,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     saveToLocalStorage("aurafit_schedule", updatedSchedule);
 
     if (updatedExercisesProposal.length > 0 && currentWorkoutName) {
-      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0]; // 調整マーク除去
+      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0];
       const updatedMenus = { ...menus };
 
       updatedMenus[pureWorkoutName] = updatedMenus[pureWorkoutName].map(ex => {
@@ -451,26 +496,25 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     setShowProgressionModal(false);
   };
 
-  // 6. 玉突きスライド
-  const slideWorkoutToNextAvailable = () => {
-    const todayIndex = schedule.findIndex(item => item.date === selectedDateStr);
-    if (todayIndex === -1) {
-      alert("今日の予定がありません。");
-      return;
-    }
+  // -------------------------------------------------------------
+  // 玉突きスライド（順送り）コアロジック
+  // -------------------------------------------------------------
+  const slideWorkout = (targetDateStr: string) => {
+    const todayIndex = schedule.findIndex(item => item.date === targetDateStr);
+    if (todayIndex === -1) return;
 
     const currentItem = schedule[todayIndex];
-    if (currentItem.completed) {
-      alert("このワークアウトはすでに実施済みです。");
+    if (!currentItem.workoutName || currentItem.completed) {
       return;
     }
 
+    // 予定が入っている日をターゲット日以降で全抽出
     const futureScheduledDays = schedule
       .map((item, index) => ({ ...item, index }))
       .filter(item => item.index >= todayIndex && !item.completed);
 
     if (futureScheduledDays.length < 2) {
-      alert("スライド先となる未来のトレーニング日程がありません。");
+      alert("スライド先となる未来のトレーニング日程がありません。カレンダーで日付を増やすか、AIスケジュール構築を行ってください。");
       return;
     }
 
@@ -485,7 +529,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     }
 
     newSchedule[todayIndex] = {
-      date: selectedDateStr,
+      date: targetDateStr,
       workoutName: "",
       isTemp: false,
       completed: false
@@ -493,6 +537,21 @@ ${JSON.stringify(exerciseRecords, null, 2)}
 
     setSchedule(newSchedule);
     saveToLocalStorage("aurafit_schedule", newSchedule);
+  };
+
+  // スライドボタン押下時のハンドラー
+  const slideWorkoutToNextAvailable = () => {
+    const scheduled = schedule.find(item => item.date === selectedDateStr);
+    if (!scheduled || !scheduled.workoutName) {
+      alert("この日の予定がありません。スライドできません。");
+      return;
+    }
+    if (scheduled.completed) {
+      alert("このワークアウトはすでに実施済みです。");
+      return;
+    }
+    backupScheduleForUndo(dateStates);
+    slideWorkout(selectedDateStr);
   };
 
   // -------------------------------------------------------------
@@ -507,11 +566,11 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     setShowAdjustModal(false);
     try {
       const ai = getAiInstance();
-      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "");
+      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0];
       const baseExercises = menus[pureWorkoutName] || [];
 
       const conditionText = {
-        normal: "普通（予定通り）",
+        normal: "普通（予定通り行う）",
         energetic: "絶好調（もっと追い込みたい、元気）",
         fatigued: "寝不足・疲労あり（体が重い、回復不足）",
         joint_ache: "肩や腰など関節に軽い違和感・痛みあり"
@@ -523,8 +582,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       }[userTimeLimit];
 
       const prompt = `
-あなたは有能なAIトレーナーです。ユーザーの「今日の体調」と「時間制限」に基づいて、基本メニューを「今日限りの調整メニュー」に科学的に最適化（セット数の削減、重量の加減、補助種目のカット、ドロップセットの追加など）してください。
-元の「基本メニュー」を変更するのではなく、「今日1日だけ行う特別メニュー」を生成します。
+ユーザーの「今日の体調」と「時間制限」に基づいて、基本メニューを「今日限りの調整メニュー」に科学的に最適化（セット数の削減、重量の加減、補助種目のカットなど）してください。
 
 【今日の基本メニュー】
 ${JSON.stringify(baseExercises, null, 2)}
@@ -534,23 +592,19 @@ ${JSON.stringify(baseExercises, null, 2)}
 - 時間制限: "${timeLimitText}"
 
 【調整ルール】
-- 絶好調: 重量や回数は維持、必要に応じて補助種目を追加するか、「セット数を維持して限界まで追い込む」アドバイス。
-- 寝不足・疲労: 中枢神経系の疲労を避けるため、セット数を1〜2セット減らす、または重量を5%〜10%下げる。
-- 関節に軽い違和感: 違和感のある関節に大きな負担がかかる種目を、低負荷・高回数（または安全な代替種目）に変更する。
-- 時短希望: 補助種目をカットし、大きな多関節種目（コンパウンド種目）にのみ絞って短時間で終わるようにし、セット数も必要に応じて減らす。
+- 絶好調: 重量や回数は維持、補助種目の追加や、限界まで追い込むアドバイス。
+- 寝不足・疲労: セット数を1〜2セット減らす、または重量を5%〜10%下げる。
+- 関節に軽い違和感: 違和感のある関節に負担がかかる種目を、低負荷・高回数（または安全な代替種目）に変更する。
+- 時短希望: 補助種目をカットし、大きな多関節種目にのみ絞ってセット数も減らす。
 
-【出力仕様】
-- 調整された「今日行う種目リスト」と「なぜこの調整を行ったかの簡潔な理由（1行）」を出力してください。
-- 理由（reason）は1行（100文字以内）で、ユーザーのモチベーションを保つポジティブな内容にしてください。
-
-以下のJSONフォーマットで回答してください。
+以下のJSONフォーマットで回答してください。余計なテキストは含めないでください。
 
 【出力フォーマット】
 {
   "adjustedExercises": [
     { "name": "種目名", "weight": 40, "reps": 10, "sets": 2 }
   ],
-  "reason": "調整理由の説明"
+  "reason": "調整理由の説明（100文字以内でポジティブに！）"
 }
 `;
 
@@ -566,7 +620,6 @@ ${JSON.stringify(baseExercises, null, 2)}
       const data = JSON.parse(response.text || "{}");
 
       if (data.adjustedExercises && data.reason) {
-        // カレンダーの今日（選択日）の予定にカスタムメニューをインジェクション
         const updatedSchedule = schedule.map(item => {
           if (item.date === selectedDateStr) {
             return {
@@ -581,7 +634,6 @@ ${JSON.stringify(baseExercises, null, 2)}
         setSchedule(updatedSchedule);
         saveToLocalStorage("aurafit_schedule", updatedSchedule);
 
-        // 記録用画面の再ロードトリガー
         setActiveAdjustmentReason(data.reason);
         const records: ExerciseRecord[] = data.adjustedExercises.map((ex: any) => ({
           name: ex.name,
@@ -604,9 +656,9 @@ ${JSON.stringify(baseExercises, null, 2)}
     }
   };
 
-  // AI体調調整のリセット（基本メニューに戻す）
+  // AI体調調整のリセット
   const resetAIWorkoutAdjustment = () => {
-    if (confirm("今日のメニューを元の基本メニュー設定に戻しますか？（ここまでの今日の入力値はリセットされます）")) {
+    if (confirm("今日のメニューを元の基本メニュー設定に戻しますか？")) {
       const updatedSchedule = schedule.map(item => {
         if (item.date === selectedDateStr) {
           const newItem = { ...item };
@@ -709,6 +761,16 @@ ${JSON.stringify(menus, null, 2)}
       const data = JSON.parse(response.text || "{}");
 
       if ((builderAction === "create" || builderAction === "import") && data.menus) {
+        if (Object.keys(menus).length > 0) {
+          const actionName = builderAction === "create" ? "AI新規作成" : "過去メニュー取り込み";
+          const confirmed = window.confirm(
+            `警告: 現在設定されているすべての基本メニューが、${actionName}によって作成されたメニューで上書き（上書き消去）されます。\nよろしいですか？`
+          );
+          if (!confirmed) {
+            setLoading(false);
+            return;
+          }
+        }
         setMenus(data.menus);
         setEditableMenus(JSON.parse(JSON.stringify(data.menus)));
         saveToLocalStorage("aurafit_menus", data.menus);
@@ -736,16 +798,27 @@ ${JSON.stringify(menus, null, 2)}
     setLoading(true);
     try {
       const ai = getAiInstance();
+      const currentEx = exerciseRecords[index];
+      const originalWeight = currentEx ? currentEx.targetWeight : 0;
+      const originalReps = currentEx ? currentEx.targetReps : 0;
+      const originalSets = currentEx ? currentEx.targetSets : 0;
+
       const prompt = `
-ユーザーは現在「${exerciseName}」を行う予定ですが、以下の理由により代替種目を求めてしています。
+ユーザーは現在「${exerciseName}」を行う予定ですが、以下の理由により代替種目を求めています。
 代わりとなる筋トレ種目を3つ提案してください。
 
 【状況】
 - 代替したい種目: "${exerciseName}"
+- 元の予定負荷: 重量 ${originalWeight}kg × ${originalReps}回 × ${originalSets}セット
 - 代替を希望する理由: "混雑、または痛みのため"
 - 使用可能な器具: "${equipment}"
 
-以下のJSONフォーマットで回答してください。
+【重量設定の指示】
+- 提案する代替種目の負荷（重量・回数・セット数）は、元の予定負荷と同等の運動強度（主働筋への刺激量）になるように運動生理学的に換算して決定してください。
+- 例：バーベル種目からダンベル種目へ移行する場合、片側重量はバーベル総重量の半分より少し軽め（例: ベンチプレス 60kg ➔ ダンベルプレス片側 25kg等）にするなど適切に調整してください。
+- 自重種目の場合は重量を 0 としてください。
+
+以下のJSONフォーマットで回答してください。余計な説明テキストは含めないでください。
 
 【出力フォーマット】
 {
@@ -755,7 +828,7 @@ ${JSON.stringify(menus, null, 2)}
       "weight": 20,
       "reps": 12,
       "sets": 3,
-      "reason": "この種目を推薦する理由"
+      "reason": "この種目を推薦する理由（元の種目と同じ部位を鍛えられる点や、混雑を回避できる点、関節に優しい点など）"
     }
   ]
 }
@@ -942,6 +1015,29 @@ ${JSON.stringify(menus, null, 2)}
         <>
           {/* 今日のやること */}
           <div className={styles.workoutSection} style={{ marginBottom: "20px", flex: "none" }}>
+            {/* Undoバナー */}
+            {showUndoBanner && (
+              <div style={{ 
+                background: "rgba(255, 165, 0, 0.1)", 
+                border: "1px solid var(--status-maybe)", 
+                borderRadius: "10px", 
+                padding: "10px 14px", 
+                marginBottom: "16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+              }}>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-main)" }}>⚠️ スケジュールをスライドしました</span>
+                <button 
+                  className={styles.btnPrimary} 
+                  style={{ padding: "4px 10px", fontSize: "0.7rem", background: "var(--status-maybe)", color: "#000", border: "none" }}
+                  onClick={undoLastSlide}
+                >
+                  元に戻す (Undo)
+                </button>
+              </div>
+            )}
+
             <div className={styles.workoutHeader}>
               <div className={styles.workoutTitle}>
                 {selectedDateStr === formatDate(new Date()) ? "🎯 今日のトレーニング" : `📅 ${selectedDateStr} の予定`}
@@ -959,6 +1055,74 @@ ${JSON.stringify(menus, null, 2)}
                   </>
                 )}
               </div>
+            </div>
+
+            {/* 選択日の予定ステータス変更パネル（スマホ操作性の向上） */}
+            <div style={{ 
+              display: "flex", 
+              gap: "6px", 
+              marginTop: "8px", 
+              marginBottom: "16px", 
+              flexWrap: "wrap",
+              background: "rgba(255, 255, 255, 0.02)",
+              padding: "8px",
+              borderRadius: "8px",
+              border: "1px solid rgba(255, 255, 255, 0.05)",
+              alignItems: "center"
+            }}>
+              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginRight: "4px" }}>予定ステータス:</span>
+              <button 
+                className={styles.btnSecondary} 
+                style={{ 
+                  padding: "4px 8px", 
+                  fontSize: "0.7rem", 
+                  background: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "var(--status-go)" : "", 
+                  color: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "#000" : "",
+                  border: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "none" : "1px solid rgba(255,255,255,0.1)"
+                }}
+                onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_GO")}
+              >
+                👍 行ける
+              </button>
+              <button 
+                className={styles.btnSecondary} 
+                style={{ 
+                  padding: "4px 8px", 
+                  fontSize: "0.7rem", 
+                  background: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "var(--status-no)" : "", 
+                  color: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "#fff" : "",
+                  border: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "none" : "1px solid rgba(255,255,255,0.1)"
+                }}
+                onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_NO")}
+              >
+                ☕️ オフにする (スライド)
+              </button>
+              <button 
+                className={styles.btnSecondary} 
+                style={{ 
+                  padding: "4px 8px", 
+                  fontSize: "0.7rem", 
+                  background: dateStates[selectedDateStr] === "MAYBE" ? "var(--status-maybe)" : "", 
+                  color: dateStates[selectedDateStr] === "MAYBE" ? "#000" : "",
+                  border: dateStates[selectedDateStr] === "MAYBE" ? "none" : "1px solid rgba(255,255,255,0.1)"
+                }}
+                onClick={() => setSpecificDateState(selectedDateStr, "MAYBE")}
+              >
+                ❓ 微妙
+              </button>
+              <button 
+                className={styles.btnSecondary} 
+                style={{ 
+                  padding: "4px 8px", 
+                  fontSize: "0.7rem", 
+                  background: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "rgba(255,255,255,0.1)" : "",
+                  color: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "var(--text-main)" : "",
+                  border: "1px solid rgba(255,255,255,0.1)"
+                }}
+                onClick={() => setSpecificDateState(selectedDateStr, "DEFAULT")}
+              >
+                未定
+              </button>
             </div>
 
             {/* AI体調調整が適用されている場合のメッセージ */}
@@ -1077,7 +1241,7 @@ ${JSON.stringify(menus, null, 2)}
           <div className={styles.calendarSection}>
             <div className={styles.sectionTitle}>
               <span>📅 カレンダー（最大1ヶ月）</span>
-              <span className={styles.helperText}>ダブルタップ：予定切替 | タップ：選択</span>
+              <span className={styles.helperText}>タップ：日付選択（上のパネルで予定を調整）</span>
             </div>
             
             <div className={styles.calendarGrid}>
@@ -1102,7 +1266,6 @@ ${JSON.stringify(menus, null, 2)}
                     key={idx} 
                     className={`${styles.calendarDay} ${stateClass} ${isSelected ? styles.selectedDay : ""}`}
                     onClick={() => setSelectedDateStr(dateStr)}
-                    onDoubleClick={() => toggleDateState(dateStr)}
                   >
                     <span className={styles.dayLabel}>{d.getDate()}</span>
                     {isCompleted ? (
@@ -1481,9 +1644,7 @@ ${JSON.stringify(menus, null, 2)}
         </div>
       )}
 
-      {/* -------------------------------------------------------------
-          AI体調調整 (オートレギュレーション) 設定モーダル
-          ------------------------------------------------------------- */}
+      {/* AI体調調整モーダル */}
       {showAdjustModal && (
         <div className={styles.modalOverlay}>
           <div className={styles.modalContent} style={{ maxWidth: "360px" }}>
