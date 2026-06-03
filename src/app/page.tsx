@@ -19,7 +19,8 @@ import {
   ClipboardList,
   Activity,
   RotateCcw,
-  Clock
+  Clock,
+  Info
 } from "lucide-react";
 
 // -------------------------------------------------------------
