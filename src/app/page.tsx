@@ -16,8 +16,10 @@ import {
   AlertTriangle,
   Trash2,
   Save,
-  ArrowRight,
-  ClipboardList
+  ClipboardList,
+  Activity,
+  RotateCcw,
+  Clock
 } from "lucide-react";
 
 // -------------------------------------------------------------
@@ -37,6 +39,9 @@ type ScheduleItem = {
   workoutName: string;
   isTemp: boolean;
   completed?: boolean;
+  // 【新設】その日限りのカスタマイズメニュー (基本メニューのオーバーライド)
+  customExercises?: Exercise[];
+  adjustmentReason?: string;
 };
 
 type DateState = "DEFAULT" | "CONFIRMED_GO" | "CONFIRMED_NO" | "MAYBE";
@@ -100,6 +105,12 @@ export default function Home() {
   // --- 記録入力用状態 (選択した日のワークアウト実績) ---
   const [currentWorkoutName, setCurrentWorkoutName] = useState<string>("");
   const [exerciseRecords, setExerciseRecords] = useState<ExerciseRecord[]>([]);
+  const [activeAdjustmentReason, setActiveAdjustmentReason] = useState<string>("");
+
+  // --- AI調整（体調・時間）のポップアップ用状態 ---
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [userCondition, setUserCondition] = useState<"normal" | "energetic" | "fatigued" | "joint_ache">("normal");
+  const [userTimeLimit, setUserTimeLimit] = useState<"none" | "short">("none");
 
   // --- AIレスポンス・ポップアップ状態 ---
   const [aiFeedback, setAiFeedback] = useState<string>("");
@@ -139,7 +150,7 @@ export default function Home() {
         loadedMenus = JSON.parse(savedMenus);
         setMenus(loadedMenus);
       }
-      setEditableMenus(JSON.parse(JSON.stringify(loadedMenus))); // 深いコピー
+      setEditableMenus(JSON.parse(JSON.stringify(loadedMenus)));
 
       if (savedSchedule) setSchedule(JSON.parse(savedSchedule));
       if (savedDateStates) setDateStates(JSON.parse(savedDateStates));
@@ -197,9 +208,7 @@ export default function Home() {
     saveToLocalStorage("aurafit_date_states", newStates);
   };
 
-  // -------------------------------------------------------------
-  // クライアントサイドでの Gemini API 呼び出し
-  // -------------------------------------------------------------
+  // Gemini API 取得
   const getAiInstance = () => {
     if (!apiKey) {
       alert("AI機能を使用するにはGemini APIキーを設定してください。");
@@ -227,7 +236,7 @@ export default function Home() {
 
       const prompt = `
 あなたは科学的エビデンス（運動生理学・スポーツ科学）に基づく一流のパーソナルトレーナーです。
-ユーザーが選択したカレンダー日程に対し、登録されている「基本メニュー（種目内容・設定重量・回数）」を深く分析し、怪我のリスクを最小化し筋肥大・疲労回復を最大化する最適な1ヶ月分のスケジュール（筋トレ予定の配置）を作成してください。
+ユーザーが選択したカレンダー日程に対し、登録されている「基本メニュー（種目内容・設定重量・回数）」を深く分析し、怪我のリスクを最小化し回復を最大化する最適な1ヶ月分のスケジュール（筋トレ予定の配置）を作成してください。
 
 【ユーザーデータ】
 - 確定している行ける日 (confirmedDays): [${confirmedDays.join(", ")}]
@@ -239,17 +248,14 @@ export default function Home() {
 - 開始日: ${formatDate(today)}
 - 終了日: ${formatDate(end)} (開始日から1ヶ月後)
 
-【超重要：スケジュール配置の解剖学・生理学的ルール（AIはこれらを考慮すること）】
+【超重要：スケジュール配置の生理学的ルール】
 1. **筋肉の回復期間（超回復）の確保**:
-   - 各メニュー(A, B, C...)に含まれる種目の主働筋（大胸筋、広背筋、大腿四頭筋、三角筋など）を分析してください。
-   - 同じ主働筋を激しく使うメニューは、中48時間〜72時間（少なくとも中1日、できれば中2日）空けて配置してください。例えば、月曜日に大胸筋（胸）を鍛えた場合、火曜日に再び胸を使うメニューは絶対に配置せず、水曜日以降にするか、火曜日は下半身（脚）を配置します。
+   - 各メニュー(A, B, C...)に含まれる種目の主働筋（大胸筋、広背筋、大腿四頭筋など）を分析してください。
+   - 同じ主働筋を激しく使うメニューは、中48時間〜72時間（少なくとも中1日、できれば中2日）空けて配置してください。
 2. **多関節コンパウンド種目の干渉回避**:
-   - デッドリフト（脊柱起立筋・ハムストリングス）やスクワット（大腿四頭筋・臀筋・腰部）などの高重量コンパウンド種目は中枢神経および下背部に多大な疲労を蓄積させます。
-   - スクワットを含むメニューとデッドリフトを含むメニューは、必ず中1日以上のオフ（または下背部を使わないメニュー）を挟んでください。連続日程（中0日）での配置は怪我防止のため厳禁です。
+   - スクワットを含むメニューとデッドリフトを含むメニューは、必ず中1日以上のオフ（または下背部を使わないメニュー）を挟んでください。連続日程（中0日）での配置は厳禁です。
 3. **行ける日(確定・微妙)の優先と仮予定の挿入**:
-   - ユーザーが指定した「行ける日(confirmedDays)」と「微妙な日(maybeDays)」を優先してトレーニング日に設定します。
-   - 設定されたトレーニング日数が週の目標頻度(${frequency}回)に達しない場合は、「未定（DEFAULT）の日」から最も回復のバランスが良くなる日程を選び、仮予定 (isTemp: true) としてメニューを割り当ててください。
-   - 絶対に行けないオフ日 (noDays) には絶対にメニューを配置しないでください。
+   - 確定している行ける日と微妙な日を優先し、頻度が足りない場合は「未定の日」からバランスの良い日程を選び、仮予定 (isTemp: true) としてメニューを割り当ててください。
 
 以下のJSONフォーマットで回答してください。余計な説明テキストは一切含めず、純粋なJSONのみを返してください。
 
@@ -258,8 +264,8 @@ export default function Home() {
   "schedule": [
     {
       "date": "YYYY-MM-DD",
-      "workoutName": "A", // 基本メニューのキー (A, B, Cなど)
-      "isTemp": true // ユーザーが確定・微妙に指定していない「未確定の日」にAIが仮配置した場合はtrue、確定・微妙の日はfalse
+      "workoutName": "A",
+      "isTemp": true
     }
   ]
 }
@@ -295,7 +301,10 @@ export default function Home() {
     const scheduled = schedule.find(item => item.date === selectedDateStr);
     if (scheduled && !scheduled.completed) {
       setCurrentWorkoutName(scheduled.workoutName);
-      const exerciseList = menus[scheduled.workoutName] || [];
+      
+      // AI調整がある場合はそれを優先、無ければ基本メニュー
+      const exerciseList = scheduled.customExercises || menus[scheduled.workoutName] || [];
+      setActiveAdjustmentReason(scheduled.adjustmentReason || "");
 
       const records: ExerciseRecord[] = exerciseList.map(ex => ({
         name: ex.name,
@@ -312,9 +321,11 @@ export default function Home() {
     } else if (scheduled && scheduled.completed) {
       setCurrentWorkoutName(scheduled.workoutName + " (実施済み)");
       setExerciseRecords([]);
+      setActiveAdjustmentReason("");
     } else {
       setCurrentWorkoutName("");
       setExerciseRecords([]);
+      setActiveAdjustmentReason("");
     }
   }, [selectedDateStr, schedule, menus]);
 
@@ -347,18 +358,23 @@ export default function Home() {
     setLoading(true);
     try {
       const ai = getAiInstance();
+      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "");
+      const baseExercises = menus[pureWorkoutName] || [];
 
       const prompt = `
-ユーザーの今日の実績を分析し、次回の目標重量・回数・セット数を決定し、励ます褒め言葉を生成してください。
+ユーザーの今日の実績を分析し、次回の「基本メニュー」の目標重量・回数・セット数を決定し、褒め言葉を生成してください。
+今回は「その日限りの調整メニュー」で実施した可能性がありますが、提案は「基本メニューの更新」に対して行ってください。
 
-【結果】
-メニュー名: ${currentWorkoutName}
+【基本メニューの設定】
+${JSON.stringify(baseExercises, null, 2)}
+
+【今日の実績（調整適用後）】
 実績:
 ${JSON.stringify(exerciseRecords, null, 2)}
 
 【重量設定ルール】
-- 目標セット数すべてにおいて目標回数をクリアし、かつ目標重量で行えた場合 ➔ 次回増量（上半身+2.5kg/下半身+5kgなど）。
-- 届かなかったセットがある場合 ➔ 重量維持。
+- 実施した各セットにおいて、基本メニューの目標重量・回数をクリアしている場合 ➔ 次回増量。
+- 疲労による調整などでセット数や重量を減らしていた場合は、無理に増量せず「維持」を推奨してください。
 
 【出力フォーマット】
 {
@@ -370,7 +386,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       "targetSets": 3
     }
   ],
-  "feedback": "Geminiからの褒めメッセージ(150文字程度)"
+  "feedback": "Geminiからの熱い褒めメッセージ(150文字程度)"
 }
 `;
 
@@ -379,7 +395,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          systemInstruction: "実績データから次回目標と褒め言葉のJSONを作成するトレーナーAPIです。",
+          systemInstruction: "実績データから基本メニューの次回目標と褒め言葉のJSONを作成するトレーナーAPIです。",
         },
       });
 
@@ -389,7 +405,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       setShowProgressionModal(true);
     } catch (err) {
       console.error(err);
-      alert("AIフィードバックの取得に失敗しました。キーまたは接続を確認してください。");
+      alert("AIフィードバックの取得に失敗しました。");
     } finally {
       setLoading(false);
     }
@@ -407,7 +423,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     saveToLocalStorage("aurafit_schedule", updatedSchedule);
 
     if (updatedExercisesProposal.length > 0 && currentWorkoutName) {
-      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "");
+      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0]; // 調整マーク除去
       const updatedMenus = { ...menus };
 
       updatedMenus[pureWorkoutName] = updatedMenus[pureWorkoutName].map(ex => {
@@ -438,7 +454,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
   const slideWorkoutToNextAvailable = () => {
     const todayIndex = schedule.findIndex(item => item.date === selectedDateStr);
     if (todayIndex === -1) {
-      alert("今日の予定がありません。スライドできません。");
+      alert("今日の予定がありません。");
       return;
     }
 
@@ -453,7 +469,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       .filter(item => item.index >= todayIndex && !item.completed);
 
     if (futureScheduledDays.length < 2) {
-      alert("スライド先となる未来のトレーニング日程がありません。カレンダーで日付を増やすか、AIスケジュール構築を行ってください。");
+      alert("スライド先となる未来のトレーニング日程がありません。");
       return;
     }
 
@@ -463,6 +479,8 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       const prev = futureScheduledDays[i - 1];
       newSchedule[current.index].workoutName = prev.workoutName;
       newSchedule[current.index].isTemp = prev.isTemp;
+      newSchedule[current.index].customExercises = prev.customExercises;
+      newSchedule[current.index].adjustmentReason = prev.adjustmentReason;
     }
 
     newSchedule[todayIndex] = {
@@ -474,6 +492,133 @@ ${JSON.stringify(exerciseRecords, null, 2)}
 
     setSchedule(newSchedule);
     saveToLocalStorage("aurafit_schedule", newSchedule);
+  };
+
+  // -------------------------------------------------------------
+  // その日限りの AI 体調調整 (オートレギュレーション) ロジック
+  // -------------------------------------------------------------
+  const applyAIWorkoutAdjustment = async () => {
+    if (!apiKey) {
+      alert("AI調整にはAPIキーの設定が必要です。");
+      return;
+    }
+    setLoading(true);
+    setShowAdjustModal(false);
+    try {
+      const ai = getAiInstance();
+      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "");
+      const baseExercises = menus[pureWorkoutName] || [];
+
+      const conditionText = {
+        normal: "普通（予定通り）",
+        energetic: "絶好調（もっと追い込みたい、元気）",
+        fatigued: "寝不足・疲労あり（体が重い、回復不足）",
+        joint_ache: "肩や腰など関節に軽い違和感・痛みあり"
+      }[userCondition];
+
+      const timeLimitText = {
+        none: "時間制限なし",
+        short: "時間がない（30分以内の時短トレーニング希望）"
+      }[userTimeLimit];
+
+      const prompt = `
+あなたは有能なAIトレーナーです。ユーザーの「今日の体調」と「時間制限」に基づいて、基本メニューを「今日限りの調整メニュー」に科学的に最適化（セット数の削減、重量の加減、補助種目のカット、ドロップセットの追加など）してください。
+元の「基本メニュー」を変更するのではなく、「今日1日だけ行う特別メニュー」を生成します。
+
+【今日の基本メニュー】
+${JSON.stringify(baseExercises, null, 2)}
+
+【ユーザーの今日のステータス】
+- 体調: "${conditionText}"
+- 時間制限: "${timeLimitText}"
+
+【調整ルール】
+- 絶好調: 重量や回数は維持、必要に応じて補助種目を追加するか、「セット数を維持して限界まで追い込む」アドバイス。
+- 寝不足・疲労: 中枢神経系の疲労を避けるため、セット数を1〜2セット減らす、または重量を5%〜10%下げる。
+- 関節に軽い違和感: 違和感のある関節に大きな負担がかかる種目を、低負荷・高回数（または安全な代替種目）に変更する。
+- 時短希望: 補助種目をカットし、大きな多関節種目（コンパウンド種目）にのみ絞って短時間で終わるようにし、セット数も必要に応じて減らす。
+
+【出力仕様】
+- 調整された「今日行う種目リスト」と「なぜこの調整を行ったかの簡潔な理由（1行）」を出力してください。
+- 理由（reason）は1行（100文字以内）で、ユーザーのモチベーションを保つポジティブな内容にしてください。
+
+以下のJSONフォーマットで回答してください。
+
+【出力フォーマット】
+{
+  "adjustedExercises": [
+    { "name": "種目名", "weight": 40, "reps": 10, "sets": 2 }
+  ],
+  "reason": "調整理由の説明"
+}
+`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          systemInstruction: "体調に合わせた今日限定メニューを生成するAIトレーナーAPIです。",
+        },
+      });
+
+      const data = JSON.parse(response.text || "{}");
+
+      if (data.adjustedExercises && data.reason) {
+        // カレンダーの今日（選択日）の予定にカスタムメニューをインジェクション
+        const updatedSchedule = schedule.map(item => {
+          if (item.date === selectedDateStr) {
+            return {
+              ...item,
+              customExercises: data.adjustedExercises,
+              adjustmentReason: data.reason
+            };
+          }
+          return item;
+        });
+
+        setSchedule(updatedSchedule);
+        saveToLocalStorage("aurafit_schedule", updatedSchedule);
+
+        // 記録用画面の再ロードトリガー
+        setActiveAdjustmentReason(data.reason);
+        const records: ExerciseRecord[] = data.adjustedExercises.map((ex: any) => ({
+          name: ex.name,
+          targetWeight: ex.weight,
+          targetReps: ex.reps,
+          targetSets: ex.sets,
+          sets: Array.from({ length: ex.sets }).map(() => ({
+            weight: ex.weight,
+            reps: ex.reps,
+            completed: false
+          }))
+        }));
+        setExerciseRecords(records);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("AIによるメニュー調整に失敗しました。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // AI体調調整のリセット（基本メニューに戻す）
+  const resetAIWorkoutAdjustment = () => {
+    if (confirm("今日のメニューを元の基本メニュー設定に戻しますか？（ここまでの今日の入力値はリセットされます）")) {
+      const updatedSchedule = schedule.map(item => {
+        if (item.date === selectedDateStr) {
+          const newItem = { ...item };
+          delete newItem.customExercises;
+          delete newItem.adjustmentReason;
+          return newItem;
+        }
+        return item;
+      });
+      setSchedule(updatedSchedule);
+      saveToLocalStorage("aurafit_schedule", updatedSchedule);
+      setActiveAdjustmentReason("");
+    }
   };
 
   // 7. Tab 2: AIメニュー構築・改善・インポート
@@ -537,11 +682,6 @@ ${JSON.stringify(menus, null, 2)}
 
 【ユーザーの入力テキスト】
 "${aiRequestText}"
-
-【指示】
-- テキスト内に曜日、分割（例: 胸の日、背中の日など）、または複数のワークアウトセットがある場合は、A, B, Cなどのルーティン名に分類してパースしてください。
-- 1つの大きなメニューであれば "A" の中にすべての種目を配置してください。
-- 重量や回数の記述がない場合は、妥当な初期値（例: 重量0〜20kg程度、10回、3セット）を適当に補填してください。
 
 以下のJSONフォーマットで回答してください。
 
@@ -644,7 +784,7 @@ ${JSON.stringify(menus, null, 2)}
   const selectAlternative = (altName: string, altWeight: number, altReps: number, altSets: number) => {
     if (!alternativeRequest || !currentWorkoutName) return;
     
-    const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "");
+    const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0];
 
     const updatedRecords = [...exerciseRecords];
     updatedRecords[alternativeRequest.index] = {
@@ -681,11 +821,7 @@ ${JSON.stringify(menus, null, 2)}
     setAlternativesList([]);
   };
 
-  // -------------------------------------------------------------
   // 手動メニュー編集用メソッド
-  // -------------------------------------------------------------
-  
-  // 種目の変更ハンドラー
   const handleManualExerciseChange = (groupKey: string, exIndex: number, field: keyof Exercise, value: any) => {
     const updated = { ...editableMenus };
     if (field === "name") {
@@ -696,14 +832,12 @@ ${JSON.stringify(menus, null, 2)}
     setEditableMenus(updated);
   };
 
-  // 種目の削除
   const handleManualDeleteExercise = (groupKey: string, exIndex: number) => {
     const updated = { ...editableMenus };
     updated[groupKey].splice(exIndex, 1);
     setEditableMenus(updated);
   };
 
-  // 新規種目の追加
   const handleManualAddExercise = (groupKey: string) => {
     const updated = { ...editableMenus };
     if (!updated[groupKey]) {
@@ -718,9 +852,8 @@ ${JSON.stringify(menus, null, 2)}
     setEditableMenus(updated);
   };
 
-  // ルーティン（グループ）の追加
   const handleManualAddGroup = () => {
-    const nextChar = String.fromCharCode(65 + Object.keys(editableMenus).length); // A, B, C...
+    const nextChar = String.fromCharCode(65 + Object.keys(editableMenus).length);
     const updated = { ...editableMenus };
     updated[nextChar] = [
       { name: "ベンチプレス", weight: 40, reps: 10, sets: 3 }
@@ -728,7 +861,6 @@ ${JSON.stringify(menus, null, 2)}
     setEditableMenus(updated);
   };
 
-  // ルーティン（グループ）の削除
   const handleManualDeleteGroup = (groupKey: string) => {
     if (confirm(`ルーティン ${groupKey} を完全に削除しますか？`)) {
       const updated = { ...editableMenus };
@@ -737,9 +869,7 @@ ${JSON.stringify(menus, null, 2)}
     }
   };
 
-  // 手動編集の保存
   const handleSaveManualChanges = () => {
-    // バリデーション：空のルーティンは削除するか警告
     const cleaned = { ...editableMenus };
     Object.keys(cleaned).forEach(key => {
       if (cleaned[key].length === 0) {
@@ -816,12 +946,45 @@ ${JSON.stringify(menus, null, 2)}
                 {selectedDateStr === formatDate(new Date()) ? "🎯 今日のトレーニング" : `📅 ${selectedDateStr} の予定`}
                 {currentWorkoutName && <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginLeft: "8px" }}>- {currentWorkoutName}</span>}
               </div>
-              {currentWorkoutName && !currentWorkoutName.includes("(実施済み)") && (
-                <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={slideWorkoutToNextAvailable}>
-                  明日にスライド
-                </button>
-              )}
+              <div style={{ display: "flex", gap: "6px" }}>
+                {currentWorkoutName && !currentWorkoutName.includes("(実施済み)") && (
+                  <>
+                    <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={() => setShowAdjustModal(true)}>
+                      <Activity size={12} style={{ marginRight: "2px" }} /> AI体調調整
+                    </button>
+                    <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={slideWorkoutToNextAvailable}>
+                      スライド
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
+
+            {/* AI体調調整が適用されている場合のメッセージ */}
+            {activeAdjustmentReason && (
+              <div style={{ 
+                background: "rgba(0, 242, 254, 0.05)", 
+                border: "1px solid var(--color-primary)", 
+                borderRadius: "10px", 
+                padding: "8px 12px", 
+                marginBottom: "14px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
+                  <Info size={14} style={{ color: "var(--color-primary)" }} />
+                  <span>💡 {activeAdjustmentReason}</span>
+                </div>
+                <button 
+                  className={styles.adjustBtn} 
+                  style={{ color: "var(--status-no)", background: "transparent", border: "none", cursor: "pointer" }}
+                  onClick={resetAIWorkoutAdjustment}
+                >
+                  <RotateCcw size={12} />
+                </button>
+              </div>
+            )}
 
             {exerciseRecords.length > 0 ? (
               <div className={styles.exerciseList}>
@@ -982,7 +1145,6 @@ ${JSON.stringify(menus, null, 2)}
             AIメニュー構築 ＆ 手動カスタマイズ
           </h2>
 
-          {/* クイックアクション */}
           <div className={styles.quickActionGrid} style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
             <button 
               className={`${styles.actionCard} ${builderAction === "improve" ? styles.actionCardActive : ""}`}
@@ -1014,7 +1176,6 @@ ${JSON.stringify(menus, null, 2)}
             </button>
           </div>
 
-          {/* AIフォーム & 各種フォーム */}
           <div className={styles.aiChatBox}>
             {builderAction === "create" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -1063,7 +1224,7 @@ ${JSON.stringify(menus, null, 2)}
                   className={styles.textInput} 
                   rows={4} 
                   style={{ resize: "none", width: "100%" }}
-                  placeholder="例: 月曜：ベンチプレス60kg 10回3セット、サイドレイズ10kg 12回3セット。木曜：スクワット80kg 8回3セット..."
+                  placeholder="例: 月曜：ベンチプレス60kg 10回3セット。木曜：スクワット80kg 8回3セット..."
                   value={aiRequestText}
                   onChange={(e) => setAiRequestText(e.target.value)}
                 />
@@ -1103,7 +1264,7 @@ ${JSON.stringify(menus, null, 2)}
             )}
           </div>
 
-          {/* 現在の基本メニュー設定 (手動カスタマイズモード搭載) */}
+          {/* 基本メニュー設定 */}
           <div className={styles.savedMenusCard}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", paddingBottom: "8px", marginBottom: "12px" }}>
               <h3 style={{ fontSize: "0.9rem", fontWeight: "700" }}>
@@ -1125,7 +1286,6 @@ ${JSON.stringify(menus, null, 2)}
               )}
             </div>
 
-            {/* 手動編集時のUI */}
             {isEditingManual ? (
               <div className={styles.menuListGroup}>
                 {Object.keys(editableMenus).map((groupKey) => (
@@ -1201,7 +1361,6 @@ ${JSON.stringify(menus, null, 2)}
                 </div>
               </div>
             ) : (
-              /* 通常表示時のUI */
               <div className={styles.menuListGroup}>
                 {Object.keys(menus).map((groupKey) => (
                   <div key={groupKey} className={styles.menuGroupCard}>
@@ -1255,7 +1414,7 @@ ${JSON.stringify(menus, null, 2)}
               <div className={styles.progressionList}>
                 <div className={styles.progressionTitle}>🚀 次回目標のアップデート提案</div>
                 {updatedExercisesProposal.map((prop, idx) => {
-                  const currentEx = menus[currentWorkoutName.replace(" (実施済み)", "")]?.find(ex => ex.name === prop.name);
+                  const currentEx = menus[currentWorkoutName.replace(" (実施済み)", "").split(" ")[0]]?.find(ex => ex.name === prop.name);
                   const isUpgraded = currentEx ? prop.targetWeight > currentEx.weight : false;
 
                   return (
@@ -1317,6 +1476,97 @@ ${JSON.stringify(menus, null, 2)}
             >
               キャンセル
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* -------------------------------------------------------------
+          AI体調調整 (オートレギュレーション) 設定モーダル
+          ------------------------------------------------------------- */}
+      {showAdjustModal && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalContent} style={{ maxWidth: "360px" }}>
+            <div className={styles.statValue} style={{ fontSize: "1.5rem", marginBottom: "8px" }}>🩺 AI体調調整</div>
+            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "20px" }}>
+              今日の体調や時間に合わせて、基本メニューはそのままに、今日のトレーニングだけをAIが一時的に調整します。
+            </p>
+
+            {/* 体調選択 */}
+            <div style={{ width: "100%", textAlign: "left", marginBottom: "16px" }}>
+              <label style={{ fontSize: "0.75rem", fontWeight: "700", color: "var(--color-primary)", display: "block", marginBottom: "8px" }}>
+                今日の体調は？
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <button 
+                  className={`${styles.btnSecondary} ${userCondition === "normal" ? styles.actionCardActive : ""}`}
+                  style={{ justifyContent: "flex-start", padding: "10px" }}
+                  onClick={() => setUserCondition("normal")}
+                >
+                  😀 普通（予定通り行う）
+                </button>
+                <button 
+                  className={`${styles.btnSecondary} ${userCondition === "energetic" ? styles.actionCardActive : ""}`}
+                  style={{ justifyContent: "flex-start", padding: "10px" }}
+                  onClick={() => setUserCondition("energetic")}
+                >
+                  🔥 絶好調（もっと追い込みたい！）
+                </button>
+                <button 
+                  className={`${styles.btnSecondary} ${userCondition === "fatigued" ? styles.actionCardActive : ""}`}
+                  style={{ justifyContent: "flex-start", padding: "10px" }}
+                  onClick={() => setUserCondition("fatigued")}
+                >
+                  💤 寝不足・疲労（ボリュームを減らす）
+                </button>
+                <button 
+                  className={`${styles.btnSecondary} ${userCondition === "joint_ache" ? styles.actionCardActive : ""}`}
+                  style={{ justifyContent: "flex-start", padding: "10px" }}
+                  onClick={() => setUserCondition("joint_ache")}
+                >
+                  ⚠️ 肩や腰に軽い痛み・違和感がある
+                </button>
+              </div>
+            </div>
+
+            {/* 時間制限選択 */}
+            <div style={{ width: "100%", textAlign: "left", marginBottom: "24px" }}>
+              <label style={{ fontSize: "0.75rem", fontWeight: "700", color: "var(--color-primary)", display: "block", marginBottom: "8px" }}>
+                時間制限は？
+              </label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button 
+                  className={`${styles.btnSecondary} ${userTimeLimit === "none" ? styles.actionCardActive : ""}`}
+                  style={{ flex: 1, padding: "10px" }}
+                  onClick={() => setUserTimeLimit("none")}
+                >
+                  <Clock size={14} style={{ marginRight: "4px" }} /> なし
+                </button>
+                <button 
+                  className={`${styles.btnSecondary} ${userTimeLimit === "short" ? styles.actionCardActive : ""}`}
+                  style={{ flex: 1, padding: "10px" }}
+                  onClick={() => setUserTimeLimit("short")}
+                >
+                  ⚡️ 時短 (30分)
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", width: "100%" }}>
+              <button 
+                className={styles.btnSecondary} 
+                style={{ flex: 1 }}
+                onClick={() => setShowAdjustModal(false)}
+              >
+                キャンセル
+              </button>
+              <button 
+                className={styles.btnPrimary} 
+                style={{ flex: 2 }}
+                onClick={applyAIWorkoutAdjustment}
+              >
+                AI調整メニューを適用
+              </button>
+            </div>
           </div>
         </div>
       )}
