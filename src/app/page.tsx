@@ -14,7 +14,9 @@ import {
   HelpCircle,
   Key,
   AlertTriangle,
-  Info
+  Trash2,
+  Edit2,
+  BookOpen
 } from "lucide-react";
 
 // -------------------------------------------------------------
@@ -54,25 +56,69 @@ type ExerciseRecord = {
 };
 
 // -------------------------------------------------------------
-// 初期モックデータ
+// プリセットテンプレート (王道メニュー)
 // -------------------------------------------------------------
-const INITIAL_MENUS: Menus = {
-  "A": [
-    { name: "ベンチプレス", weight: 40, reps: 10, sets: 3 },
-    { name: "ショルダープレス", weight: 10, reps: 10, sets: 3 },
-    { name: "サイドレイズ", weight: 5, reps: 12, sets: 3 }
-  ],
-  "B": [
-    { name: "デッドリフト", weight: 50, reps: 8, sets: 3 },
-    { name: "ラットプルダウン", weight: 30, reps: 10, sets: 3 },
-    { name: "アームカール", weight: 8, reps: 12, sets: 3 }
-  ],
-  "C": [
-    { name: "バーベルスクワット", weight: 50, reps: 10, sets: 3 },
-    { name: "レッグプレス", weight: 80, reps: 12, sets: 3 },
-    { name: "クランチ", weight: 0, reps: 15, sets: 3 }
-  ]
+const PRESET_TEMPLATES = {
+  bodyweight: {
+    name: "自重ホームトレーニング (週2回 全身)",
+    menus: {
+      "A": [
+        { name: "プッシュアップ (胸・腕)", weight: 0, reps: 15, sets: 3 },
+        { name: "自重スクワット (脚)", weight: 0, reps: 20, sets: 3 },
+        { name: "リバースランジ (臀部・脚)", weight: 0, reps: 12, sets: 3 },
+        { name: "プランク (体幹)", weight: 0, reps: 60, sets: 3 }
+      ],
+      "B": [
+        { name: "ワイドプッシュアップ (胸外側)", weight: 0, reps: 12, sets: 3 },
+        { name: "ヒップスラスト (お尻)", weight: 0, reps: 20, sets: 3 },
+        { name: "タオルラットプルダウン (背中)", weight: 0, reps: 15, sets: 3 },
+        { name: "クランチ (腹筋)", weight: 0, reps: 15, sets: 3 }
+      ]
+    }
+  },
+  dumbbell: {
+    name: "ダンベル全身トレーニング (週3回)",
+    menus: {
+      "A": [
+        { name: "ダンベルチェストプレス (胸)", weight: 10, reps: 10, sets: 3 },
+        { name: "ワンハンドローイング (背中)", weight: 10, reps: 10, sets: 3 },
+        { name: "ゴブレットスクワット (脚)", weight: 12, reps: 12, sets: 3 },
+        { name: "ダンベルカール (腕)", weight: 6, reps: 12, sets: 3 }
+      ],
+      "B": [
+        { name: "ダンベルショルダープレス (肩)", weight: 8, reps: 10, sets: 3 },
+        { name: "ダンベルデッドリフト (ハム・背中)", weight: 12, reps: 10, sets: 3 },
+        { name: "サイドレイズ (肩側部)", weight: 4, reps: 12, sets: 3 },
+        { name: "ライイングトラセプスエクステンション (腕)", weight: 6, reps: 12, sets: 3 }
+      ]
+    }
+  },
+  gym: {
+    name: "本格ジムマシントレーニング (週3回 3分割)",
+    menus: {
+      "A": [
+        { name: "ベンチプレス (胸)", weight: 40, reps: 10, sets: 3 },
+        { name: "インクラインダンベルプレス (胸上部)", weight: 14, reps: 10, sets: 3 },
+        { name: "ショルダープレス (肩)", weight: 12, reps: 10, sets: 3 },
+        { name: "サイドレイズ (肩側部)", weight: 6, reps: 12, sets: 3 }
+      ],
+      "B": [
+        { name: "デッドリフト (背面全体)", weight: 60, reps: 8, sets: 3 },
+        { name: "ラットプルダウン (背中)", weight: 35, reps: 10, sets: 3 },
+        { name: "ケーブルローイング (背中中部)", weight: 30, reps: 10, sets: 3 },
+        { name: "アームカール (二頭筋)", weight: 10, reps: 12, sets: 3 }
+      ],
+      "C": [
+        { name: "バーベルスクワット (脚)", weight: 50, reps: 10, sets: 3 },
+        { name: "レッグプレス (脚全体)", weight: 80, reps: 12, sets: 3 },
+        { name: "レッグカール (もも裏)", weight: 25, reps: 12, sets: 3 },
+        { name: "ハンギングレッグレイズ (腹筋)", weight: 0, reps: 15, sets: 3 }
+      ]
+    }
+  }
 };
+
+const INITIAL_MENUS: Menus = PRESET_TEMPLATES.bodyweight.menus;
 
 export default function Home() {
   // --- 基本状態 ---
@@ -105,13 +151,14 @@ export default function Home() {
   const [alternativeRequest, setAlternativeRequest] = useState<{ exerciseName: string; index: number } | null>(null);
   const [alternativesList, setAlternativesList] = useState<any[]>([]);
   
-  // --- Tab 2: AIメニュー構築用の状態 ---
+  // --- Tab 2: AIメニュー構築・編集用の状態 ---
   const [aiRequestText, setAiRequestText] = useState("");
-  const [builderAction, setBuilderAction] = useState<"create" | "improve" | "alternative">("improve");
+  const [builderAction, setBuilderAction] = useState<"create" | "improve" | "manual" | "alternative">("improve");
   const [aiBuilderResponse, setAiBuilderResponse] = useState<string>("");
   const [frequency, setFrequency] = useState(3);
   const [goals, setGoals] = useState("胸と背中を大きくしたい");
   const [equipment, setEquipment] = useState("ジムのフル器具");
+  const [detailInstructions, setDetailInstructions] = useState(""); // AIへの詳細なこだわり指示
 
   // 1. 初期ロード (LocalStorageから)
   useEffect(() => {
@@ -132,7 +179,6 @@ export default function Home() {
       if (savedDateStates) setDateStates(JSON.parse(savedDateStates));
       if (savedStreak) setStreak(parseInt(savedStreak, 10));
 
-      // 今日から30日間の日付配列を生成
       const tempDates = [];
       const today = new Date();
       setSelectedDateStr(formatDate(today));
@@ -158,12 +204,10 @@ export default function Home() {
     alert("Gemini APIキーをLocalStorageに保存しました！");
   };
 
-  // 状態の変更をLocalStorageに反映するヘルパー
   const saveToLocalStorage = (key: string, data: any) => {
     localStorage.setItem(key, JSON.stringify(data));
   };
 
-  // 日付フォーマットヘルパー (YYYY-MM-DD)
   const formatDate = (d: Date) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -171,7 +215,6 @@ export default function Home() {
     return `${year}-${month}-${day}`;
   };
 
-  // 日付状態トグル
   const toggleDateState = (dateStr: string) => {
     const current = dateStates[dateStr] || "DEFAULT";
     let next: DateState = "DEFAULT";
@@ -185,15 +228,22 @@ export default function Home() {
     saveToLocalStorage("aurafit_date_states", newStates);
   };
 
-  // -------------------------------------------------------------
-  // クライアントサイドでの Gemini API 呼び出し
-  // -------------------------------------------------------------
   const getAiInstance = () => {
     if (!apiKey) {
       alert("AI機能を使用するにはGemini APIキーを設定してください。");
       throw new Error("APIキーがありません");
     }
     return new GoogleGenAI({ apiKey });
+  };
+
+  // テンプレート適用
+  const applyPresetTemplate = (type: "bodyweight" | "dumbbell" | "gym") => {
+    const template = PRESET_TEMPLATES[type];
+    if (confirm(`「${template.name}」を基本メニューとして適用しますか？現在のメニュー設定は上書きされます。`)) {
+      setMenus(template.menus);
+      saveToLocalStorage("aurafit_menus", template.menus);
+      alert("テンプレートを適用しました！カレンダーで日程を選び、「AIスケジュール構築」を行ってください。");
+    }
   };
 
   // 3. AIスケジュール構築 (Tab 1)
@@ -213,6 +263,9 @@ export default function Home() {
       const maybeDays = Object.keys(dateStates).filter(k => dateStates[k] === "MAYBE");
       const noDays = Object.keys(dateStates).filter(k => dateStates[k] === "CONFIRMED_NO");
 
+      // 現在登録されている基本メニューのキー一覧 (例: A, B, C)
+      const routineKeys = Object.keys(menus);
+
       const prompt = `
 ユーザーのスケジュールに合わせて最適な1ヶ月分の筋トレ計画（部位・種目の割り振り）を作成してください。
 
@@ -221,7 +274,7 @@ export default function Home() {
 - 行けるかもしれない微妙な日 (maybeDays): [${maybeDays.join(", ")}]
 - 絶対に行けないオフ日 (noDays): [${noDays.join(", ")}]
 - 目標頻度: 週に約 ${frequency} 回
-- トレーニング目標: "${goals}"
+- 現在のルーティングループ: [${routineKeys.join(", ")}]
 - 開始日: ${formatDate(today)}
 - 終了日: ${formatDate(end)} (開始日から1ヶ月後)
 
@@ -230,8 +283,7 @@ export default function Home() {
 2. ユーザーが「絶対に行けないオフ日 (noDays)」にマークした日には絶対にメニューを配置しないでください。
 3. ユーザーが指定した「確定している行ける日 (confirmedDays)」と「微妙な日 (maybeDays)」を優先的にトレーニング日として使用します。
 4. 週の目標頻度(${frequency}回)に達するためにトレーニング日数が不足している場合は、その他の「未指定（DEFAULT）の日」から仮の日程をAIが選定（仮予定として割り当て）してください。
-5. トレーニング内容のバリエーションとして、3分割（例: A:胸・肩, B:背中・腕, C:脚・腹筋）または2分割（例: A:上半身, B:下半身）のルーティン（A, B, C...）を定義し、それをトレーニング日にローテーションで割り振ります。
-6. 各ルーティン(A, B, C)に対応する基本メニュー（種目、目標重量、回数、セット数）も併せて作成してください。重量は標準的な初期値（例：ベンチプレス40kgなど）にしてください。
+5. 定義されているルーティン名（${routineKeys.join(", ")}）を、トレーニング日に順番にローテーションで割り振ります。
 
 以下のJSONフォーマットで回答してください。余計な説明テキストは一切含めず、純粋なJSONのみを返してください。
 
@@ -240,15 +292,10 @@ export default function Home() {
   "schedule": [
     {
       "date": "YYYY-MM-DD",
-      "workoutName": "A",
-      "isTemp": true // ユーザーが確定・微妙に指定していない「未確定の日」にAIが仮配置した場合はtrue、確定・微妙の日はfalse
+      "workoutName": "A", // ルーティン名
+      "isTemp": true // AIが仮配置した日はtrue、ユーザーの確定・微妙な日はfalse
     }
-  ],
-  "menus": {
-    "A": [
-      { "name": "ベンチプレス", "weight": 40, "reps": 10, "sets": 3 }
-    ]
-  }
+  ]
 }
 `;
 
@@ -262,11 +309,6 @@ export default function Home() {
       });
 
       const data = JSON.parse(response.text || "{}");
-
-      if (data.menus) {
-        setMenus(data.menus);
-        saveToLocalStorage("aurafit_menus", data.menus);
-      }
 
       if (data.schedule) {
         setSchedule(data.schedule);
@@ -494,11 +536,12 @@ ${JSON.stringify(exerciseRecords, null, 2)}
 - 目標: "${goals}"
 - 週の頻度: ${frequency} 日
 - 利用可能な器具: "${equipment}"
+- 詳細なこだわり指示: "${detailInstructions || "特になし"}"
 
 【出力仕様】
 - 週の頻度に合わせて、分割ルーティン（A, B, Cなど）を作成してください。
 - 初心者〜中級者が安全に行える、科学的に効果的な種目を割り当てます。
-- 初回重量は、一般的な目安（例：ベンチプレス40kgなど）を設定してください。
+- 初回重量は、一般的な目安を設定してください。
 
 以下のJSONフォーマットで回答してください。
 
@@ -661,6 +704,69 @@ ${JSON.stringify(menus, null, 2)}
     setAlternativesList([]);
   };
 
+  // -------------------------------------------------------------
+  // 手動メニュー編集 (完全ローカルカスタマイズ)
+  // -------------------------------------------------------------
+  
+  // 種目の値変更
+  const handleManualExerciseChange = (groupKey: string, index: number, field: keyof Exercise, value: any) => {
+    const updated = { ...menus };
+    if (field === "name") {
+      updated[groupKey][index].name = value;
+    } else {
+      updated[groupKey][index][field] = Math.max(0, parseFloat(value) || 0);
+    }
+    setMenus(updated);
+    saveToLocalStorage("aurafit_menus", updated);
+  };
+
+  // 種目の削除
+  const removeManualExercise = (groupKey: string, index: number) => {
+    const updated = { ...menus };
+    updated[groupKey].splice(index, 1);
+    setMenus(updated);
+    saveToLocalStorage("aurafit_menus", updated);
+  };
+
+  // 新規種目の追加
+  const addManualExercise = (groupKey: string) => {
+    const updated = { ...menus };
+    updated[groupKey].push({
+      name: "新しい種目",
+      weight: 10,
+      reps: 10,
+      sets: 3
+    });
+    setMenus(updated);
+    saveToLocalStorage("aurafit_menus", updated);
+  };
+
+  // ルーティングループ自体の追加
+  const addManualRoutineGroup = () => {
+    const nextGroupLetter = String.fromCharCode(65 + Object.keys(menus).length); // A, B, C, D...
+    if (Object.keys(menus).length >= 6) {
+      alert("ルーティン数は最大6つ(Fまで)と制限されています。");
+      return;
+    }
+    const updated = { ...menus, [nextGroupLetter]: [{ name: "新しい種目", weight: 10, reps: 10, sets: 3 }] };
+    setMenus(updated);
+    saveToLocalStorage("aurafit_menus", updated);
+  };
+
+  // ルーティングループの削除
+  const removeManualRoutineGroup = (groupKey: string) => {
+    if (Object.keys(menus).length <= 1) {
+      alert("最低1つのルーティングループが必要です。");
+      return;
+    }
+    if (confirm(`ルーティン ${groupKey} を削除しますか？`)) {
+      const updated = { ...menus };
+      delete updated[groupKey];
+      setMenus(updated);
+      saveToLocalStorage("aurafit_menus", updated);
+    }
+  };
+
   return (
     <div className={styles.container}>
       {/* ヘッダー */}
@@ -684,9 +790,7 @@ ${JSON.stringify(menus, null, 2)}
         </div>
       )}
 
-      {/* -------------------------------------------------------------
-          APIキー未設定時の警告 (Tab 1 の場合のみ)
-          ------------------------------------------------------------- */}
+      {/* APIキー未設定時の警告 */}
       {showKeyWarning && activeTab === "workouts" && (
         <div className={styles.workoutSection} style={{ marginBottom: "20px", borderColor: "var(--status-maybe)" }}>
           <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", marginBottom: "12px" }}>
@@ -882,41 +986,72 @@ ${JSON.stringify(menus, null, 2)}
       )}
 
       {/* -------------------------------------------------------------
-          Tab 2: メニュー構築 (Menu Builder) ＆ APIキー設定
+          Tab 2: メニュー構築 (Menu Builder) ＆ 自由カスタマイズ
           ------------------------------------------------------------- */}
       {activeTab === "builder" && (
         <div className={styles.menuBuilderSection}>
           <h2 className={styles.sectionTitle} style={{ marginBottom: "16px" }}>
             <Sparkles size={16} style={{ color: "var(--color-primary)", marginRight: "8px" }} />
-            AIメニュー構築・設定
+            AIメニュー構築 ＆ 手動カスタマイズ
           </h2>
 
           {/* クイックアクション */}
-          <div className={styles.quickActionGrid}>
+          <div className={styles.quickActionGrid} style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
             <button 
               className={`${styles.actionCard} ${builderAction === "improve" ? styles.actionCardActive : ""}`}
               onClick={() => setBuilderAction("improve")}
             >
-              <RefreshCw size={18} />
-              <span>既存メニュー改善</span>
+              <RefreshCw size={16} />
+              <span>AIメニュー改善</span>
             </button>
             <button 
               className={`${styles.actionCard} ${builderAction === "create" ? styles.actionCardActive : ""}`}
               onClick={() => setBuilderAction("create")}
             >
-              <Plus size={18} />
-              <span>0から新メニュー</span>
+              <Plus size={16} />
+              <span>AI新メニュー</span>
+            </button>
+            <button 
+              className={`${styles.actionCard} ${builderAction === "manual" ? styles.actionCardActive : ""}`}
+              onClick={() => setBuilderAction("manual")}
+            >
+              <Edit2 size={16} />
+              <span>手動エディタ</span>
             </button>
             <button 
               className={`${styles.actionCard} ${builderAction === "alternative" ? styles.actionCardActive : ""}`}
               onClick={() => setBuilderAction("alternative")}
             >
-              <Key size={18} />
-              <span>APIキー設定</span>
+              <Key size={16} />
+              <span>API設定</span>
             </button>
           </div>
 
-          {/* AIフォーム & APIキー設定フォーム */}
+          {/* 1. 簡単メニュー導入 (スターターテンプレート) */}
+          {builderAction !== "alternative" && builderAction !== "manual" && (
+            <div className={styles.aiChatBox} style={{ borderLeft: "3px solid var(--color-primary)", background: "rgba(0, 242, 254, 0.02)" }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "10px" }}>
+                <BookOpen size={16} style={{ color: "var(--color-primary)" }} />
+                <h3 style={{ fontSize: "0.85rem", fontWeight: "700" }}>🚀 ワンタップで王道メニューを適用 (簡単導入)</h3>
+              </div>
+              <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "10px" }}>
+                AIを使わず、まずは王道メニューからスタートしたい方に最適です。選択すると基本メニューが即時セットされます。
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <button className={styles.btnSecondary} style={{ fontSize: "0.75rem", padding: "8px" }} onClick={() => applyPresetTemplate("bodyweight")}>
+                  🏠 自重ホームトレーニング (週2回・全身)
+                </button>
+                <button className={styles.btnSecondary} style={{ fontSize: "0.75rem", padding: "8px" }} onClick={() => applyPresetTemplate("dumbbell")}>
+                  🏋️ ダンベル全身トレーニング (週3回・分割)
+                </button>
+                <button className={styles.btnSecondary} style={{ fontSize: "0.75rem", padding: "8px" }} onClick={() => applyPresetTemplate("gym")}>
+                  🏛️ 本格ジムマシントレーニング (週3回・3分割)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* AIフォーム / 設定 / 手動エディタ */}
           <div className={styles.aiChatBox}>
             {builderAction === "create" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -934,7 +1069,17 @@ ${JSON.stringify(menus, null, 2)}
                     <input type="text" className={styles.textInput} style={{ width: "100%" }} value={equipment} onChange={(e) => setEquipment(e.target.value)} />
                   </div>
                 </div>
-                <button className={styles.btnPrimary} style={{ marginTop: "8px" }} onClick={handleAIBuilderSubmit}>
+                <div>
+                  <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>AIへの詳細なこだわり・追加指示 (自由入力)</label>
+                  <textarea 
+                    className={styles.textInput} 
+                    style={{ width: "100%", height: "60px", resize: "none", fontFamily: "inherit" }} 
+                    placeholder="例: スクワットはレッグプレスに変更して、肩のサイドレイズは必ず入れてほしい"
+                    value={detailInstructions} 
+                    onChange={(e) => setDetailInstructions(e.target.value)} 
+                  />
+                </div>
+                <button className={styles.btnPrimary} style={{ marginTop: "4px" }} onClick={handleAIBuilderSubmit}>
                   AI新メニューを生成 ＆ 適用
                 </button>
               </div>
@@ -955,6 +1100,18 @@ ${JSON.stringify(menus, null, 2)}
                     送信
                   </button>
                 </div>
+              </div>
+            ) : builderAction === "manual" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>✏️ 自由手動エディタモード</span>
+                  <button className={styles.btnPrimary} style={{ padding: "4px 10px", fontSize: "0.7rem" }} onClick={addManualRoutineGroup}>
+                    + ルーティングループを追加
+                  </button>
+                </div>
+                <p style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                  このモードでは、AIを介さず直接種目の文字入力や、重量・レップ・セット数を手動で編集できます。
+                </p>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -988,21 +1145,99 @@ ${JSON.stringify(menus, null, 2)}
             )}
           </div>
 
-          {/* 保存済みメニュー */}
+          {/* 基本メニュー ＆ 手動編集エディタ */}
           <div className={styles.savedMenusCard}>
-            <h3 style={{ fontSize: "0.9rem", fontWeight: "700", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", paddingBottom: "8px" }}>
-              📋 現在の基本メニュー設定
+            <h3 style={{ fontSize: "0.9rem", fontWeight: "700", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", paddingBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>📋 基本メニュー一覧</span>
+              {builderAction === "manual" && <span style={{ fontSize: "0.75rem", color: "var(--color-primary)" }}>● リアルタイム手動編集</span>}
             </h3>
+            
             <div className={styles.menuListGroup}>
               {Object.keys(menus).map((groupKey) => (
                 <div key={groupKey} className={styles.menuGroupCard}>
-                  <div className={styles.menuGroupName}>ルーティン {groupKey}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <div className={styles.menuGroupName}>ルーティン {groupKey}</div>
+                    {builderAction === "manual" && (
+                      <button 
+                        className={styles.btnSecondary} 
+                        style={{ padding: "2px 6px", fontSize: "0.65rem", borderColor: "var(--status-no)", color: "var(--status-no)" }}
+                        onClick={() => removeManualRoutineGroup(groupKey)}
+                      >
+                        グループ削除
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 種目リスト */}
                   {menus[groupKey].map((ex, idx) => (
-                    <div key={idx} className={styles.menuItemRow}>
-                      <span>{ex.name}</span>
-                      <span>{ex.weight}kg × {ex.reps}回 ({ex.sets}set)</span>
+                    <div key={idx} style={{ marginBottom: "8px" }}>
+                      {builderAction === "manual" ? (
+                        /* 手動エディタ：編集用UI */
+                        <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", background: "rgba(255,255,255,0.01)", padding: "6px", borderRadius: "8px" }}>
+                          <input 
+                            type="text" 
+                            className={styles.textInput} 
+                            style={{ flex: 2, minWidth: "120px", fontSize: "0.75rem", padding: "4px 8px" }}
+                            value={ex.name} 
+                            onChange={(e) => handleManualExerciseChange(groupKey, idx, "name", e.target.value)} 
+                          />
+                          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                            <input 
+                              type="number" 
+                              className={styles.textInput} 
+                              style={{ width: "45px", fontSize: "0.75rem", padding: "4px 2px", textAlign: "center" }}
+                              value={ex.weight} 
+                              onChange={(e) => handleManualExerciseChange(groupKey, idx, "weight", e.target.value)} 
+                            />
+                            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>kg</span>
+                          </div>
+                          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                            <input 
+                              type="number" 
+                              className={styles.textInput} 
+                              style={{ width: "35px", fontSize: "0.75rem", padding: "4px 2px", textAlign: "center" }}
+                              value={ex.reps} 
+                              onChange={(e) => handleManualExerciseChange(groupKey, idx, "reps", e.target.value)} 
+                            />
+                            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>回</span>
+                          </div>
+                          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                            <input 
+                              type="number" 
+                              className={styles.textInput} 
+                              style={{ width: "30px", fontSize: "0.75rem", padding: "4px 2px", textAlign: "center" }}
+                              value={ex.sets} 
+                              onChange={(e) => handleManualExerciseChange(groupKey, idx, "sets", e.target.value)} 
+                            />
+                            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>set</span>
+                          </div>
+                          <button 
+                            className={styles.checkBtn} 
+                            style={{ borderColor: "rgba(255, 56, 56, 0.3)", color: "var(--status-no)", width: "24px", height: "24px", padding: "0" }}
+                            onClick={() => removeManualExercise(groupKey, idx)}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        /* 通常表示：インラインテキスト */
+                        <div className={styles.menuItemRow}>
+                          <span>{ex.name}</span>
+                          <span>{ex.weight}kg × {ex.reps}回 ({ex.sets}set)</span>
+                        </div>
+                      )}
                     </div>
                   ))}
+
+                  {builderAction === "manual" && (
+                    <button 
+                      className={styles.btnSecondary} 
+                      style={{ width: "100%", fontSize: "0.7rem", padding: "6px", borderStyle: "dashed", marginTop: "6px" }}
+                      onClick={() => addManualExercise(groupKey)}
+                    >
+                      + 種目を追加
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -1030,7 +1265,7 @@ ${JSON.stringify(menus, null, 2)}
         </div>
       </nav>
 
-      {/* AI重量更新 ＆ 褒めちぎりフィードバックモーダル */}
+      {/* AI重量更新モーダル */}
       {showProgressionModal && (
         <div className={styles.modalOverlay}>
           <div className={styles.modalContent}>
