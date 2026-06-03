@@ -1,0 +1,24 @@
+{
+  "name": "AuraFit - 継続最優先のAI筋トレ管理",
+  "short_name": "AuraFit",
+  "description": "AIがスケジュールとメニューの自動構築・スライド調整を行い、筋トレの継続を強力にサポートする疑似アプリ。",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07050a",
+  "theme_color": "#07050a",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

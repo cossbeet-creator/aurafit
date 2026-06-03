@@ -1,0 +1,133 @@
+:root {
+  /* ==========================================
+     ダークテーマ (デフォルト)
+     ========================================== */
+  --bg-main: #0c0a12;
+  --bg-card: rgba(255, 255, 255, 0.03);
+  --bg-card-hover: rgba(255, 255, 255, 0.06);
+  --border-color: rgba(255, 255, 255, 0.07);
+  
+  --text-main: #f3f1f8;
+  --text-muted: #8c889d;
+  --text-dark: #121016;
+
+  /* アクセントカラー */
+  --color-primary: #00f2fe; /* エレクトリックシアン */
+  --color-secondary: #f35588; /* ネオンマゼンタ */
+  
+  /* カレンダーステート */
+  --status-default: #24222c; /* 未定 */
+  --status-go: #00ff87; /* 行ける日 */
+  --status-no: #ff3a55; /* 行けない日 */
+  --status-maybe: #ff9d00; /* 微妙な日 */
+  
+  /* ソフトな光彩 (ダーク用) */
+  --glow-primary: 0 4px 20px rgba(0, 242, 254, 0.15);
+  --glow-go: 0 4px 15px rgba(0, 255, 135, 0.2);
+  --glow-no: 0 4px 15px rgba(255, 58, 85, 0.15);
+  --glow-maybe: 0 4px 15px rgba(255, 157, 0, 0.2);
+  
+  /* グラスモーフィズム */
+  --glass-bg: rgba(18, 15, 26, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-blur: blur(20px);
+}
+
+@media (prefers-color-scheme: light) {
+  /* ==========================================
+     ライトテーマ (OS設定追従)
+     ========================================== */
+  :root {
+    --bg-main: #f6f5fa;
+    --bg-card: rgba(0, 0, 0, 0.02);
+    --bg-card-hover: rgba(0, 0, 0, 0.04);
+    --border-color: rgba(0, 0, 0, 0.07);
+    
+    --text-main: #181522;
+    --text-muted: #747087;
+    --text-dark: #fbfbfd;
+
+    /* アクセントカラー (コントラスト調整済み) */
+    --color-primary: #0087a3;
+    --color-secondary: #cc3160;
+    
+    /* カレンダーステート */
+    --status-default: #e4e2eb;
+    --status-go: #00ad58;
+    --status-no: #d61a3c;
+    --status-maybe: #cc7000;
+    
+    /* ソフトな影 (ライト用) */
+    --glow-primary: 0 4px 16px rgba(0, 135, 163, 0.1);
+    --glow-go: 0 4px 12px rgba(0, 173, 88, 0.12);
+    --glow-no: 0 4px 12px rgba(214, 26, 60, 0.1);
+    --glow-maybe: 0 4px 12px rgba(204, 112, 0, 0.12);
+    
+    /* グラスモーフィズム */
+    --glass-bg: rgba(255, 255, 255, 0.8);
+    --glass-border: rgba(0, 0, 0, 0.06);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  background-attachment: fixed;
+}
+
+/* ライト/ダークでの背景グラデーション切り替え */
+body::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(0, 242, 254, 0.03) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(243, 53, 136, 0.03) 0%, transparent 40%);
+}
+
+@media (prefers-color-scheme: light) {
+  body::before {
+    background-image: 
+      radial-gradient(circle at 10% 20%, rgba(0, 135, 163, 0.03) 0%, transparent 45%),
+      radial-gradient(circle at 90% 80%, rgba(204, 49, 96, 0.03) 0%, transparent 45%);
+  }
+}
+
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* スクロールバー */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
