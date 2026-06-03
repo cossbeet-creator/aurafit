@@ -139,11 +139,24 @@ export default function Home() {
   // 1. 初期ロード
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedKey = localStorage.getItem("aurafit_api_key");
-      const savedMenus = localStorage.getItem("aurafit_menus");
-      const savedSchedule = localStorage.getItem("aurafit_schedule");
-      const savedDateStates = localStorage.getItem("aurafit_date_states");
-      const savedStreak = localStorage.getItem("aurafit_streak");
+      // 旧 Fitrum から 新 Fitrum へのデータ移行
+      const migrate = (oldKey: string, newKey: string) => {
+        const val = localStorage.getItem(oldKey);
+        if (val && !localStorage.getItem(newKey)) {
+          localStorage.setItem(newKey, val);
+        }
+      };
+      migrate("fitrum_api_key", "fitrum_api_key");
+      migrate("fitrum_menus", "fitrum_menus");
+      migrate("fitrum_schedule", "fitrum_schedule");
+      migrate("fitrum_date_states", "fitrum_date_states");
+      migrate("fitrum_streak", "fitrum_streak");
+
+      const savedKey = localStorage.getItem("fitrum_api_key");
+      const savedMenus = localStorage.getItem("fitrum_menus");
+      const savedSchedule = localStorage.getItem("fitrum_schedule");
+      const savedDateStates = localStorage.getItem("fitrum_date_states");
+      const savedStreak = localStorage.getItem("fitrum_streak");
 
       let loadedMenus = INITIAL_MENUS;
       if (savedKey) {
@@ -181,7 +194,7 @@ export default function Home() {
       return;
     }
     setApiKey(inputApiKey.trim());
-    localStorage.setItem("aurafit_api_key", inputApiKey.trim());
+    localStorage.setItem("fitrum_api_key", inputApiKey.trim());
     setShowKeyWarning(false);
     alert("Gemini APIキーをLocalStorageに保存しました！");
   };
@@ -210,11 +223,11 @@ export default function Home() {
   const undoLastSlide = () => {
     if (previousSchedule) {
       setSchedule(previousSchedule);
-      saveToLocalStorage("aurafit_schedule", previousSchedule);
+      saveToLocalStorage("fitrum_schedule", previousSchedule);
     }
     if (previousDateStates) {
       setDateStates(previousDateStates);
-      saveToLocalStorage("aurafit_date_states", previousDateStates);
+      saveToLocalStorage("fitrum_date_states", previousDateStates);
     }
     setPreviousSchedule(null);
     setPreviousDateStates(null);
@@ -231,14 +244,14 @@ export default function Home() {
       if (scheduled && scheduled.workoutName && !scheduled.completed) {
         backupScheduleForUndo(dateStates);
         setDateStates(newStates);
-        saveToLocalStorage("aurafit_date_states", newStates);
+        saveToLocalStorage("fitrum_date_states", newStates);
         slideWorkout(dateStr);
         return;
       }
     }
 
     setDateStates(newStates);
-    saveToLocalStorage("aurafit_date_states", newStates);
+    saveToLocalStorage("fitrum_date_states", newStates);
   };
 
   // 日付状態トグル
@@ -331,7 +344,7 @@ export default function Home() {
 
       if (data.schedule) {
         setSchedule(data.schedule);
-        saveToLocalStorage("aurafit_schedule", data.schedule);
+        saveToLocalStorage("fitrum_schedule", data.schedule);
       }
     } catch (err) {
       console.error(err);
@@ -466,7 +479,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       return item;
     });
     setSchedule(updatedSchedule);
-    saveToLocalStorage("aurafit_schedule", updatedSchedule);
+    saveToLocalStorage("fitrum_schedule", updatedSchedule);
 
     if (updatedExercisesProposal.length > 0 && currentWorkoutName) {
       const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0];
@@ -487,12 +500,12 @@ ${JSON.stringify(exerciseRecords, null, 2)}
 
       setMenus(updatedMenus);
       setEditableMenus(JSON.parse(JSON.stringify(updatedMenus)));
-      saveToLocalStorage("aurafit_menus", updatedMenus);
+      saveToLocalStorage("fitrum_menus", updatedMenus);
     }
 
     const newStreak = streak + 1;
     setStreak(newStreak);
-    saveToLocalStorage("aurafit_streak", newStreak);
+    saveToLocalStorage("fitrum_streak", newStreak);
     setShowProgressionModal(false);
   };
 
@@ -536,7 +549,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     };
 
     setSchedule(newSchedule);
-    saveToLocalStorage("aurafit_schedule", newSchedule);
+    saveToLocalStorage("fitrum_schedule", newSchedule);
   };
 
   // スライドボタン押下時のハンドラー
@@ -632,7 +645,7 @@ ${JSON.stringify(baseExercises, null, 2)}
         });
 
         setSchedule(updatedSchedule);
-        saveToLocalStorage("aurafit_schedule", updatedSchedule);
+        saveToLocalStorage("fitrum_schedule", updatedSchedule);
 
         setActiveAdjustmentReason(data.reason);
         const records: ExerciseRecord[] = data.adjustedExercises.map((ex: any) => ({
@@ -669,7 +682,7 @@ ${JSON.stringify(baseExercises, null, 2)}
         return item;
       });
       setSchedule(updatedSchedule);
-      saveToLocalStorage("aurafit_schedule", updatedSchedule);
+      saveToLocalStorage("fitrum_schedule", updatedSchedule);
       setActiveAdjustmentReason("");
     }
   };
@@ -773,7 +786,7 @@ ${JSON.stringify(menus, null, 2)}
         }
         setMenus(data.menus);
         setEditableMenus(JSON.parse(JSON.stringify(data.menus)));
-        saveToLocalStorage("aurafit_menus", data.menus);
+        saveToLocalStorage("fitrum_menus", data.menus);
         setAiBuilderResponse(
           builderAction === "import" 
             ? "過去のメニューの解析とインポートが成功しました！現在の基本メニューに反映されました。"
@@ -782,7 +795,7 @@ ${JSON.stringify(menus, null, 2)}
       } else if (builderAction === "improve" && data.updatedMenus) {
         setMenus(data.updatedMenus);
         setEditableMenus(JSON.parse(JSON.stringify(data.updatedMenus)));
-        saveToLocalStorage("aurafit_menus", data.updatedMenus);
+        saveToLocalStorage("fitrum_menus", data.updatedMenus);
         setAiBuilderResponse(`【改善内容】\n${data.explanation || "メニューを最適化しました。"}`);
       }
     } catch (err) {
@@ -889,7 +902,7 @@ ${JSON.stringify(menus, null, 2)}
 
     setMenus(updatedMenus);
     setEditableMenus(JSON.parse(JSON.stringify(updatedMenus)));
-    saveToLocalStorage("aurafit_menus", updatedMenus);
+    saveToLocalStorage("fitrum_menus", updatedMenus);
 
     setAlternativeRequest(null);
     setAlternativesList([]);
@@ -953,7 +966,7 @@ ${JSON.stringify(menus, null, 2)}
 
     setMenus(cleaned);
     setEditableMenus(JSON.parse(JSON.stringify(cleaned)));
-    saveToLocalStorage("aurafit_menus", cleaned);
+    saveToLocalStorage("fitrum_menus", cleaned);
     setIsEditingManual(false);
     alert("手動の変更を保存しました！");
   };
@@ -962,7 +975,7 @@ ${JSON.stringify(menus, null, 2)}
     <div className={styles.container}>
       {/* ヘッダー */}
       <header className={styles.header}>
-        <h1 className={styles.title}>AuraFit</h1>
+        <h1 className={styles.title}>Fitrum</h1>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <div className={styles.statCard} style={{ padding: "6px 12px" }}>
             <span className={styles.statValue}>🔥 {streak}</span>

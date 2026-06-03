@@ -2,14 +2,14 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AuraFit | 継続最優先のAI筋トレ管理",
-  description: "AuraFitは、AIがスケジュールとメニューの自動構築・スライド調整を行い、筋トレの継続を強力にサポートするモバイル特化型管理アプリです。",
+  title: "Fitrum | 継続最優先のAI筋トレ管理",
+  description: "Fitrumは、AIがスケジュールとメニューの自動構築・スライド調整を行い、筋トレの継続を強力にサポートするモバイル特化型管理アプリです。",
   keywords: ["筋トレ", "ワークアウト", "継続", "Gemini", "AIパーソナルトレーナー", "スケジュール管理", "筋トレ記録"],
-  authors: [{ name: "AuraFit Team" }],
+  authors: [{ name: "Fitrum Team" }],
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "AuraFit",
+    title: "Fitrum",
     statusBarStyle: "black-translucent",
   },
 };

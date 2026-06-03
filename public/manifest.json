@@ -1,6 +1,6 @@
 {
-  "name": "AuraFit - 継続最優先のAI筋トレ管理",
-  "short_name": "AuraFit",
+  "name": "Fitrum - 継続最優先のAI筋トレ管理",
+  "short_name": "Fitrum",
   "description": "AIがスケジュールとメニューの自動構築・スライド調整を行い、筋トレの継続を強力にサポートする疑似アプリ。",
   "start_url": "/",
   "display": "standalone",
