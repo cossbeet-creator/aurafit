@@ -68,7 +68,6 @@ type UserProfile = {
   limitations: string;
   preferences: string;
   equipment: string;
-  frequency: number;
 };
 
 type MenuHistoryItem = {
@@ -83,8 +82,7 @@ const INITIAL_PROFILE: UserProfile = {
   experience: "初心者〜中級者",
   limitations: "なし（痛みやケガなし）",
   preferences: "特になし",
-  equipment: "ジムのフル器具",
-  frequency: 3
+  equipment: "ジムのフル器具"
 };
 
 // -------------------------------------------------------------
@@ -408,7 +406,11 @@ export default function Home() {
   };
 
   // 3. AIスケジュール構築 (Tab 1)
-  const buildScheduleWithAI = async () => {
+  const buildScheduleWithAI = async (
+    targetMenus: Menus = menus,
+    targetSchedule: ScheduleItem[] = schedule,
+    targetDateStates: DateStates = dateStates
+  ) => {
     if (!apiKey) {
       alert("AIスケジュール構築にはAPIキーの設定が必要です。");
       return;
@@ -428,14 +430,12 @@ export default function Home() {
 
       const filterByRange = (dateStr: string) => {
         const d = new Date(dateStr);
-        // 時刻をクリアして日付のみで比較
         const compareDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
         const compareStart = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
         const compareEnd = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
         return compareDate >= compareStart && compareDate <= compareEnd;
       };
 
-      // AIに送信する日程は「今日以降かつ30日以内」に限定して、過去の日付に予定が作られないようにする
       const filterFutureOnly = (dateStr: string) => {
         const d = new Date(dateStr);
         const compareDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -444,12 +444,51 @@ export default function Home() {
         return compareDate >= compareToday && compareDate <= compareEnd;
       };
 
-      const confirmedDays = Object.keys(dateStates)
-        .filter(k => dateStates[k] === "CONFIRMED_GO" && filterFutureOnly(k));
-      const maybeDays = Object.keys(dateStates)
-        .filter(k => dateStates[k] === "MAYBE" && filterFutureOnly(k));
-      const noDays = Object.keys(dateStates)
-        .filter(k => dateStates[k] === "CONFIRMED_NO" && filterFutureOnly(k));
+      const confirmedDays = Object.keys(targetDateStates)
+        .filter(k => targetDateStates[k] === "CONFIRMED_GO" && filterFutureOnly(k));
+      const maybeDays = Object.keys(targetDateStates)
+        .filter(k => targetDateStates[k] === "MAYBE" && filterFutureOnly(k));
+      const noDays = Object.keys(targetDateStates)
+        .filter(k => targetDateStates[k] === "CONFIRMED_NO" && filterFutureOnly(k));
+
+      // 週のインデックスを計算するヘルパー（月曜始まり）
+      const getWeekIndex = (dateStr: string, baseDate: Date) => {
+        const d = new Date(dateStr);
+        const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+        const baseDay = base.getDay();
+        const baseMonday = new Date(base);
+        const offset = baseDay === 0 ? -6 : 1 - baseDay;
+        baseMonday.setDate(base.getDate() + offset);
+        
+        const diffTime = d.getTime() - baseMonday.getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        return Math.floor(diffDays / 7);
+      };
+
+      const formatDaysWithWeek = (daysList: string[]) => {
+        return daysList.map(dateStr => {
+          const weekIdx = getWeekIndex(dateStr, today);
+          return { date: dateStr, weekIndex: weekIdx };
+        });
+      };
+
+      const routineKeys = Object.keys(targetMenus);
+
+      // 直近の完了メニューを特定するロジック（A, B, C...のローテーションバトン引き継ぎ用）
+      let lastCompletedWorkout = "";
+      const sortedCompletedItems = [...targetSchedule]
+        .filter(item => item.completed && item.workoutName)
+        .sort((a, b) => b.date.localeCompare(a.date)); // 直近順
+
+      if (sortedCompletedItems.length > 0) {
+        const match = sortedCompletedItems.find(item => routineKeys.includes(item.workoutName));
+        if (match) {
+          lastCompletedWorkout = match.workoutName;
+        }
+      }
+      if (!lastCompletedWorkout) {
+        lastCompletedWorkout = routineKeys[0] || "A";
+      }
 
       const prompt = `
 あなたの役割は、科学的なエビデンス（運動生理学・スポーツ科学）に基づく一流のパーソナルトレーナーです。
@@ -458,12 +497,12 @@ export default function Home() {
 ${getUserProfileContext()}
 
 【ユーザーデータ】
-- 確定している行ける日 (confirmedDays): [${confirmedDays.join(", ")}]
-- 行けるかもしれない微妙な日 (maybeDays): [${maybeDays.join(", ")}]
-- 絶対に行けないオフ日 (noDays): [${noDays.join(", ")}]
-- 週の目標頻度: 約 ${userProfile.frequency} 回
-- トレーニング目標: "${userProfile.goals}"
-- 現在設定されている基本メニュー (menus): ${JSON.stringify(menus, null, 2)}
+- 確定している行ける日 (confirmedDays): ${JSON.stringify(formatDaysWithWeek(confirmedDays))}
+- 行けるかもしれない微妙な日 (maybeDays): ${JSON.stringify(formatDaysWithWeek(maybeDays))}
+- 絶対に行けないオフ日 (noDays): ${JSON.stringify(formatDaysWithWeek(noDays))}
+- 基本メニューのルーティン名: [${routineKeys.join(", ")}]
+- 現在設定されている基本メニュー (menus): ${JSON.stringify(targetMenus, null, 2)}
+- 直近で完了した基本メニュー: "${lastCompletedWorkout}"
 - 開始日: ${formatDate(today)}
 - 終了日: ${formatDate(end)} (開始日から1ヶ月後)
 
@@ -471,7 +510,13 @@ ${getUserProfileContext()}
 1. 各メニューに含まれる種目の主働筋を考慮し、同じ部位のトレーニングは中48〜72時間空けてください。
 2. スクワットとデッドリフトは連続しないようにし、必ず中1日以上のオフ（または下半身を使わないメニュー）を挟んでください。
 3. 必ず今日（開始日）以降の日程のみに配置し、過去の日付には一切配置しないでください。
-4. トレーニング予定は、ユーザーが指定した「確定している行ける日 (confirmedDays)」および「行けるかもしれない微妙な日 (maybeDays)」の中だけでやりくりして配置してください。送信されていない「未定の日（DEFAULT）」には予定を割り当てないでください。もし行ける日が不足していて目標頻度（週${userProfile.frequency}回）を満たせない場合でも、未定の日には配置せず、指定された日程の中だけで可能な限り（例：週1〜2回など）配置してください。
+4. 今回は、直近で完了した基本メニューの「次のメニュー」から順番に未来の予定（開始日以降）へ配置を開始してください。
+5. 原則として、基本メニューのルーティン（例: A ➔ B ➔ C ➔ A...）をカレンダーの確定している行ける日（confirmedDays）と微妙な日（maybeDays）に順番通りに配置してください。このルーティン順序を崩さずに並べることが最優先です。
+6. 例外ルール（全身法への自動ブレンド）：
+   - ある週（同じweekIndex）の中に、行ける日（confirmedDays）と微妙な日（maybeDays）の合計日数が2日以下しかない場合に限り、AIはその週の予定を全身をバランスよく鍛える「全身法（Full Body）」のメニューとして動的に分解・再合成し、予定を割り当ててください。その際、1日あたりの最大種目数は5〜6種目以内に制限し、補助種目（腕や肩の単関節種目）を優先的に間引き、大筋群（胸・背中・脚）の主要コンパウンド種目を1種目ずつ厳選して組み合わせ、customExercisesの中にその配列を記述してください。
+   - 週3日以上行ける日がある週は、一切ブレンドせず、順番通りにローテーションを配置してください（この場合はcustomExercisesは含めないか、空にしてください）。
+   - ブレンド（全身法）を行った週の次の週は、基本ローテーションの最初（Aなど、直近完了メニューの次）からリセットして再開してください。
+7. 送信されていない「未定の日（DEFAULT）」には予定を割り当てないでください。
 
 以下のJSONフォーマットで回答してください。余計な説明テキストは一切含めず、純粋なJSONのみを返してください。
 
@@ -481,7 +526,10 @@ ${getUserProfileContext()}
     {
       "date": "YYYY-MM-DD",
       "workoutName": "A",
-      "isTemp": true
+      "isTemp": true,
+      "customExercises": [ // ブレンド（全身法）した時のみ記述、通常のローテーション時は不要
+        { "name": "種目名", "weight": 40, "reps": 10, "sets": 3 }
+      ]
     }
   ]
 }
@@ -502,30 +550,42 @@ ${getUserProfileContext()}
       if (data.schedule) {
         // AI提案の日程と既存の日程を安全にマージする
         const aiProposal: ScheduleItem[] = data.schedule;
+        const allBaseExerciseNames = Object.values(targetMenus).flatMap(exs => exs.map(e => e.name));
 
         // 保護対象（期間外のもの、今日より過去のもの、または期間内だがすでに完了しているもの）を抽出
-        const preservedSchedule = schedule.filter(item => {
+        const preservedSchedule = targetSchedule.filter(item => {
           const itemDate = new Date(item.date);
           const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
           const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
           const isInRange = filterByRange(item.date);
           
-          if (!isInRange) return true; // 期間外は保護
-          if (compareItemDate < compareToday) return true; // 今日より過去の予定は完了・未完了を問わず保護
-          if (item.completed) return true; // 期間内だが完了済みは保護
-          return false; // 期間内の今日以降の未完了予定はAI提案で上書きするため除外
+          if (!isInRange) return true;
+          if (compareItemDate < compareToday) return true;
+          if (item.completed) return true;
+          return false;
         });
 
-        // AI提案の中で、すでに完了している既存の予定とバッティングしないものを抽出
-        const filteredAiProposal = aiProposal.filter(aiItem => {
-          const alreadyCompleted = schedule.some(item => item.date === aiItem.date && item.completed);
-          const itemDate = new Date(aiItem.date);
-          const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
-          const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-          // 過去日付にAIが誤って作ってしまったものがあればマージ時に除外
-          if (compareItemDate < compareToday) return false;
-          return !alreadyCompleted;
-        });
+        // AI提案の中で、すでに完了している既存の予定とバッティングしないものを抽出し、バリデーションを行う
+        const filteredAiProposal = aiProposal
+          .filter(aiItem => {
+            const alreadyCompleted = targetSchedule.some(item => item.date === aiItem.date && item.completed);
+            const itemDate = new Date(aiItem.date);
+            const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
+            const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            if (compareItemDate < compareToday) return false;
+            return !alreadyCompleted;
+          })
+          .map(aiItem => {
+            // ハルシネーション（未登録の種目）を防ぐため、登録済みの基本種目名と完全一致するもののみにフィルタ
+            const validatedExercises = aiItem.customExercises
+              ? aiItem.customExercises.filter((ex: any) => allBaseExerciseNames.includes(ex.name))
+              : undefined;
+
+            return {
+              ...aiItem,
+              customExercises: validatedExercises && validatedExercises.length > 0 ? validatedExercises : undefined
+            };
+          });
 
         // マージして日付順にソート
         const mergedSchedule = [...preservedSchedule, ...filteredAiProposal];
@@ -694,33 +754,43 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     setSchedule(updatedSchedule);
     saveToLocalStorage("fitrum_schedule", updatedSchedule);
 
-    if (updatedExercisesProposal.length > 0 && currentWorkoutName) {
-      const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0];
+    let finalMenus = menus;
+    if (updatedExercisesProposal.length > 0) {
       const updatedMenus = { ...menus };
+      let anyUpdated = false;
 
-      updatedMenus[pureWorkoutName] = updatedMenus[pureWorkoutName].map(ex => {
-        const proposal = updatedExercisesProposal.find(p => p.name === ex.name);
-        if (proposal) {
-          return {
-            ...ex,
-            weight: proposal.targetWeight,
-            reps: proposal.targetReps,
-            sets: proposal.targetSets
-          };
-        }
-        return ex;
+      Object.keys(updatedMenus).forEach(groupKey => {
+        updatedMenus[groupKey] = updatedMenus[groupKey].map(ex => {
+          const proposal = updatedExercisesProposal.find(p => p.name === ex.name);
+          if (proposal) {
+            anyUpdated = true;
+            return {
+              ...ex,
+              weight: proposal.targetWeight,
+              reps: proposal.targetReps,
+              sets: proposal.targetSets
+            };
+          }
+          return ex;
+        });
       });
 
-      setMenus(updatedMenus);
-      setEditableMenus(JSON.parse(JSON.stringify(updatedMenus)));
-      saveToLocalStorage("fitrum_menus", updatedMenus);
-      saveMenuToHistory(`重量更新 (ルーティン ${pureWorkoutName})`, updatedMenus);
+      if (anyUpdated) {
+        finalMenus = updatedMenus;
+        setMenus(updatedMenus);
+        setEditableMenus(JSON.parse(JSON.stringify(updatedMenus)));
+        saveToLocalStorage("fitrum_menus", updatedMenus);
+        saveMenuToHistory("重量更新（全ルーティン伝播）", updatedMenus);
+      }
     }
 
     const newStreak = streak + 1;
     setStreak(newStreak);
     saveToLocalStorage("fitrum_streak", newStreak);
     setShowProgressionModal(false);
+
+    // 未来の予定の自動再構築
+    buildScheduleWithAI(finalMenus, updatedSchedule);
   };
 
   // -------------------------------------------------------------
@@ -924,18 +994,24 @@ ${JSON.stringify(baseExercises, null, 2)}
               if (!confirmed) return;
             }
 
+            let finalMenus = menus;
             if (parsedData.menus) {
+              finalMenus = parsedData.menus;
               setMenus(parsedData.menus);
               setEditableMenus(JSON.parse(JSON.stringify(parsedData.menus)));
               saveToLocalStorage("fitrum_menus", parsedData.menus);
               saveMenuToHistory("過去メニューのインポート (JSON)", parsedData.menus);
             }
             if (parsedData.profile) {
-              setUserProfile(parsedData.profile);
-              saveToLocalStorage("fitrum_user_profile", parsedData.profile);
+              const { frequency, ...restProfile } = parsedData.profile as any;
+              setUserProfile(restProfile);
+              saveToLocalStorage("fitrum_user_profile", restProfile);
             }
 
             setAiBuilderResponse("専用JSONからプロフィール（カルテ）とメニューのインポートが瞬時に成功しました！（API通信はスキップされました）");
+            
+            // 未来の予定の自動再構築
+            buildScheduleWithAI(finalMenus, schedule);
             return;
           }
         } catch (e) {
@@ -956,7 +1032,6 @@ ${JSON.stringify(baseExercises, null, 2)}
 
 【ユーザー条件】
 - 目標: "${userProfile.goals}"
-- 週の頻度: ${userProfile.frequency} 日
 - 利用可能な器具: "${userProfile.equipment}"
 
 以下のJSONフォーマットで回答してください。
@@ -1070,7 +1145,9 @@ ${JSON.stringify(menus, null, 2)}
             return;
           }
         }
+        let finalMenus = menus;
         if (data.menus) {
+          finalMenus = data.menus;
           setMenus(data.menus);
           setEditableMenus(JSON.parse(JSON.stringify(data.menus)));
           saveToLocalStorage("fitrum_menus", data.menus);
@@ -1078,20 +1155,27 @@ ${JSON.stringify(menus, null, 2)}
           saveMenuToHistory(historyDesc, data.menus);
         }
         if (data.profile) {
-          setUserProfile(data.profile);
-          saveToLocalStorage("fitrum_user_profile", data.profile);
+          const { frequency, ...restProfile } = data.profile as any;
+          setUserProfile(restProfile);
+          saveToLocalStorage("fitrum_user_profile", restProfile);
         }
         setAiBuilderResponse(
           builderAction === "import" 
             ? "過去のメニューおよびユーザーカルテの解析とインポートが成功しました！現在の基本メニューおよびAIカルテに反映されました。"
             : "新しいメニューを作成し、適用しました！カレンダーに戻り、「AIスケジュール構築」を実行してください。"
         );
+
+        // 未来の予定の自動再構築
+        buildScheduleWithAI(finalMenus, schedule);
       } else if (builderAction === "improve" && data.updatedMenus) {
         setMenus(data.updatedMenus);
         setEditableMenus(JSON.parse(JSON.stringify(data.updatedMenus)));
         saveToLocalStorage("fitrum_menus", data.updatedMenus);
         saveMenuToHistory(`AIメニュー改善: ${aiRequestText.substring(0, 30)}${aiRequestText.length > 30 ? "..." : ""}`, data.updatedMenus);
         setAiBuilderResponse(`【改善内容】\n${data.explanation || "メニューを最適化しました。"}`);
+
+        // 未来の予定の自動再構築
+        buildScheduleWithAI(data.updatedMenus, schedule);
       }
     } catch (err) {
       console.error(err);
@@ -1267,6 +1351,9 @@ ${getUserProfileContext()}
     saveMenuToHistory("手動編集", cleaned);
     setIsEditingManual(false);
     alert("手動の変更を保存しました！");
+
+    // 未来の予定の自動再構築
+    buildScheduleWithAI(cleaned, schedule);
   };
 
   const selectedScheduleItem = schedule.find(item => item.date === selectedDateStr);
@@ -1430,7 +1517,7 @@ ${getUserProfileContext()}
               )}
 
               <div className={styles.calendarActions}>
-                <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={buildScheduleWithAI}>
+                <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={() => buildScheduleWithAI()}>
                   <Sparkles size={14} /> AIスケジュール構築
                 </button>
               </div>
@@ -1476,14 +1563,9 @@ ${getUserProfileContext()}
                 </div>
                 <div style={{ display: "flex", gap: "6px" }}>
                   {currentWorkoutName && !isWorkoutCompleted && (
-                    <>
-                      <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={() => setShowAdjustModal(true)}>
-                        <Activity size={12} style={{ marginRight: "2px" }} /> AI体調調整
-                      </button>
-                      <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={slideWorkoutToNextAvailable}>
-                        スライド
-                      </button>
-                    </>
+                    <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={() => setShowAdjustModal(true)}>
+                      <Activity size={12} style={{ marginRight: "2px" }} /> AI体調調整
+                    </button>
                   )}
                 </div>
               </div>
@@ -1749,20 +1831,7 @@ ${getUserProfileContext()}
                         }} 
                       />
                     </div>
-                    <div>
-                      <label style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>週の目標頻度（回）</label>
-                      <input 
-                        type="number" 
-                        className={styles.textInput} 
-                        style={{ width: "100%", padding: "4px 8px", fontSize: "0.75rem" }} 
-                        value={userProfile.frequency} 
-                        onChange={(e) => {
-                          const updated = { ...userProfile, frequency: Math.max(1, parseInt(e.target.value, 10) || 3) };
-                          setUserProfile(updated);
-                          saveToLocalStorage("fitrum_user_profile", updated);
-                        }} 
-                      />
-                    </div>
+
                     <div>
                       <label style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>経験・頻度</label>
                       <input 
