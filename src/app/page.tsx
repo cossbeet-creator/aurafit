@@ -1522,46 +1522,28 @@ ${getUserProfileContext()}
                           <div className={styles.setInputGroup}>
                             {/* 重量 */}
                             <div className={styles.inputWrapper}>
-                              {!isWorkoutCompleted && (
-                                <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "weight", set.weight - 2.5)}>
-                                  <Minus size={12} />
-                                </button>
-                              )}
                               <input 
                                 type="number" 
                                 className={styles.numInput} 
                                 value={set.weight} 
                                 disabled={isWorkoutCompleted}
+                                style={{ width: "50px" }}
                                 onChange={(e) => handleSetChange(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)} 
                               />
                               <span className={styles.inputLabel}>kg</span>
-                              {!isWorkoutCompleted && (
-                                <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "weight", set.weight + 2.5)}>
-                                  <Plus size={12} />
-                                </button>
-                              )}
                             </div>
 
                             {/* 回数 */}
                             <div className={styles.inputWrapper}>
-                              {!isWorkoutCompleted && (
-                                <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "reps", set.reps - 1)}>
-                                  <Minus size={12} />
-                                </button>
-                              )}
                               <input 
                                 type="number" 
                                 className={styles.numInput} 
                                 value={set.reps} 
                                 disabled={isWorkoutCompleted}
+                                style={{ width: "40px" }}
                                 onChange={(e) => handleSetChange(exIdx, setIdx, "reps", parseInt(e.target.value, 10) || 0)} 
                               />
                               <span className={styles.inputLabel}>回</span>
-                              {!isWorkoutCompleted && (
-                                <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "reps", set.reps + 1)}>
-                                  <Plus size={12} />
-                                </button>
-                              )}
                             </div>
 
                             {/* チェック */}
