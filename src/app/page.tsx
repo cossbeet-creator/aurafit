@@ -436,12 +436,21 @@ export default function Home() {
         return compareDate >= compareStart && compareDate <= compareEnd;
       };
 
+      // AIに送信する日程は「今日以降かつ30日以内」に限定して、過去の日付に予定が作られないようにする
+      const filterFutureOnly = (dateStr: string) => {
+        const d = new Date(dateStr);
+        const compareDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const compareEnd = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
+        return compareDate >= compareToday && compareDate <= compareEnd;
+      };
+
       const confirmedDays = Object.keys(dateStates)
-        .filter(k => dateStates[k] === "CONFIRMED_GO" && filterByRange(k));
+        .filter(k => dateStates[k] === "CONFIRMED_GO" && filterFutureOnly(k));
       const maybeDays = Object.keys(dateStates)
-        .filter(k => dateStates[k] === "MAYBE" && filterByRange(k));
+        .filter(k => dateStates[k] === "MAYBE" && filterFutureOnly(k));
       const noDays = Object.keys(dateStates)
-        .filter(k => dateStates[k] === "CONFIRMED_NO" && filterByRange(k));
+        .filter(k => dateStates[k] === "CONFIRMED_NO" && filterFutureOnly(k));
 
       const prompt = `
 あなたの役割は、科学的なエビデンス（運動生理学・スポーツ科学）に基づく一流のパーソナルトレーナーです。
@@ -462,7 +471,8 @@ ${getUserProfileContext()}
 【スケジュール配置ルール】
 1. 各メニューに含まれる種目の主働筋を考慮し、同じ部位のトレーニングは中48〜72時間空けてください。
 2. スクワットとデッドリフトは連続しないようにし、必ず中1日以上のオフ（または下半身を使わないメニュー）を挟んでください。
-3. 行ける日（確定・微妙）を優先して配置し、不足する場合は「未定の日」から適切な日に仮予定 (isTemp: true) を割り当ててください。
+3. 必ず今日（開始日）以降の日程のみに配置し、過去の日付には一切配置しないでください。
+4. トレーニング予定は、ユーザーが指定した「確定している行ける日 (confirmedDays)」および「行けるかもしれない微妙な日 (maybeDays)」の中だけでやりくりして配置してください。送信されていない「未定の日（DEFAULT）」には予定を割り当てないでください。もし行ける日が不足していて目標頻度（週${frequency}回）を満たせない場合でも、未定の日には配置せず、指定された日程の中だけで可能な限り（例：週1〜2回など）配置してください。
 
 以下のJSONフォーマットで回答してください。余計な説明テキストは一切含めず、純粋なJSONのみを返してください。
 
@@ -484,6 +494,7 @@ ${getUserProfileContext()}
         config: {
           responseMimeType: "application/json",
           systemInstruction: "あなたはJSONフォーマットでスケジュールデータのみを返却する筋トレ支援APIです。",
+          temperature: 0.0,
         },
       });
 
@@ -493,19 +504,27 @@ ${getUserProfileContext()}
         // AI提案の日程と既存の日程を安全にマージする
         const aiProposal: ScheduleItem[] = data.schedule;
 
-        // 保護対象（期間外のもの、または期間内だがすでに完了しているもの）を抽出
+        // 保護対象（期間外のもの、今日より過去のもの、または期間内だがすでに完了しているもの）を抽出
         const preservedSchedule = schedule.filter(item => {
           const itemDate = new Date(item.date);
+          const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
+          const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
           const isInRange = filterByRange(item.date);
           
           if (!isInRange) return true; // 期間外は保護
+          if (compareItemDate < compareToday) return true; // 今日より過去の予定は完了・未完了を問わず保護
           if (item.completed) return true; // 期間内だが完了済みは保護
-          return false; // 期間内の未完了予定はAI提案で上書きするため除外
+          return false; // 期間内の今日以降の未完了予定はAI提案で上書きするため除外
         });
 
         // AI提案の中で、すでに完了している既存の予定とバッティングしないものを抽出
         const filteredAiProposal = aiProposal.filter(aiItem => {
           const alreadyCompleted = schedule.some(item => item.date === aiItem.date && item.completed);
+          const itemDate = new Date(aiItem.date);
+          const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
+          const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          // 過去日付にAIが誤って作ってしまったものがあればマージ時に除外
+          if (compareItemDate < compareToday) return false;
           return !alreadyCompleted;
         });
 
