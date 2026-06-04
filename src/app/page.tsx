@@ -1309,6 +1309,75 @@ ${getUserProfileContext()}
           ------------------------------------------------------------- */}
       {activeTab === "workouts" && (
         <>
+          {/* カレンダー */}
+          <div className={styles.calendarSection}>
+            <div className={styles.sectionTitle} style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1rem", fontWeight: "700" }}>📅 {currentYear}年 {currentMonth + 1}月</span>
+                <div style={{ display: "flex", gap: "4px" }}>
+                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handlePrevMonth}>◀</button>
+                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleGoToToday}>今月</button>
+                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleNextMonth}>▶</button>
+                </div>
+              </div>
+              <span className={styles.helperText}>タップ：日付選択 / ダブルタップ：行ける日（👍）トグル</span>
+            </div>
+            
+            <div className={styles.calendarGrid}>
+              {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
+                <div key={i} className={styles.weekdayHeader}>{d}</div>
+              ))}
+              
+              {/* 曜日のズレ修正：その月の1日の曜日に合わせてダミーマスを挿入 */}
+              {dates.length > 0 && Array.from({ length: dates[0].getDay() }).map((_, i) => (
+                <div key={`empty-${i}`} style={{ aspectRatio: "1" }} />
+              ))}
+              
+              {dates.map((d, idx) => {
+                const dateStr = formatDate(d);
+                const isSelected = dateStr === selectedDateStr;
+                const state = dateStates[dateStr] || "DEFAULT";
+                const isScheduled = schedule.some(item => item.date === dateStr && item.workoutName);
+                const isCompleted = schedule.some(item => item.date === dateStr && item.completed);
+
+                let stateClass = styles.dayDefault;
+                if (state === "CONFIRMED_GO") stateClass = styles.dayGo;
+                else if (state === "CONFIRMED_NO") stateClass = styles.dayNo;
+                else if (state === "MAYBE") stateClass = styles.dayMaybe;
+
+                return (
+                  <button 
+                    key={idx} 
+                    className={`${styles.calendarDay} ${stateClass} ${isSelected ? styles.selectedDay : ""}`}
+                    onClick={() => handleDayClick(dateStr)}
+                  >
+                    <span className={styles.dayLabel}>{d.getDate()}</span>
+                    {isCompleted ? (
+                      <Check size={8} style={{ color: "var(--status-go)", marginTop: "2px" }} />
+                    ) : isScheduled ? (
+                      <div className={styles.workoutDot}></div>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "center", fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-default)" }}></span> 未</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-go)" }}></span> 👌</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-no)" }}></span> ❌</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-maybe)" }}></span> ❓</span>
+              </div>
+
+              <div className={styles.calendarActions}>
+                <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={buildScheduleWithAI}>
+                  <Sparkles size={14} /> AIスケジュール構築
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* 今日のやること */}
           <div className={styles.workoutSection} style={{ marginBottom: "20px", flex: "none" }}>
             {/* Undoバナー */}
@@ -1542,75 +1611,6 @@ ${getUserProfileContext()}
                 )}
               </div>
             )}
-          </div>
-
-          {/* カレンダー */}
-          <div className={styles.calendarSection}>
-            <div className={styles.sectionTitle} style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "1rem", fontWeight: "700" }}>📅 {currentYear}年 {currentMonth + 1}月</span>
-                <div style={{ display: "flex", gap: "4px" }}>
-                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handlePrevMonth}>◀</button>
-                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleGoToToday}>今月</button>
-                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleNextMonth}>▶</button>
-                </div>
-              </div>
-              <span className={styles.helperText}>タップ：日付選択 / ダブルタップ：行ける日（👍）トグル</span>
-            </div>
-            
-            <div className={styles.calendarGrid}>
-              {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
-                <div key={i} className={styles.weekdayHeader}>{d}</div>
-              ))}
-              
-              {/* 曜日のズレ修正：その月の1日の曜日に合わせてダミーマスを挿入 */}
-              {dates.length > 0 && Array.from({ length: dates[0].getDay() }).map((_, i) => (
-                <div key={`empty-${i}`} style={{ aspectRatio: "1" }} />
-              ))}
-              
-              {dates.map((d, idx) => {
-                const dateStr = formatDate(d);
-                const isSelected = dateStr === selectedDateStr;
-                const state = dateStates[dateStr] || "DEFAULT";
-                const isScheduled = schedule.some(item => item.date === dateStr && item.workoutName);
-                const isCompleted = schedule.some(item => item.date === dateStr && item.completed);
-
-                let stateClass = styles.dayDefault;
-                if (state === "CONFIRMED_GO") stateClass = styles.dayGo;
-                else if (state === "CONFIRMED_NO") stateClass = styles.dayNo;
-                else if (state === "MAYBE") stateClass = styles.dayMaybe;
-
-                return (
-                  <button 
-                    key={idx} 
-                    className={`${styles.calendarDay} ${stateClass} ${isSelected ? styles.selectedDay : ""}`}
-                    onClick={() => handleDayClick(dateStr)}
-                  >
-                    <span className={styles.dayLabel}>{d.getDate()}</span>
-                    {isCompleted ? (
-                      <Check size={8} style={{ color: "var(--status-go)", marginTop: "2px" }} />
-                    ) : isScheduled ? (
-                      <div className={styles.workoutDot}></div>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ display: "flex", gap: "10px", justifyContent: "center", fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-default)" }}></span> 未</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-go)" }}></span> 👌</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-no)" }}></span> ❌</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-maybe)" }}></span> ❓</span>
-              </div>
-
-              <div className={styles.calendarActions}>
-                <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={buildScheduleWithAI}>
-                  <Sparkles size={14} /> AIスケジュール構築
-                </button>
-              </div>
-            </div>
           </div>
         </>
       )}
