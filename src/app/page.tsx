@@ -181,6 +181,7 @@ export default function Home() {
   
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isEditingPast, setIsEditingPast] = useState(false);
+  const [scheduleInstruction, setScheduleInstruction] = useState("");
   
   // --- Tab 2: AIメニュー構築用の状態 ---
   const [aiRequestText, setAiRequestText] = useState("");
@@ -585,6 +586,11 @@ ${getUserProfileContext()}
    - 週3日以上行ける日がある週は、一切ブレンドせず、順番通りにローテーションを配置してください（この場合はcustomExercisesは含めないか、空にしてください）。
    - ブレンド（全身法）を行った週の次の週は、基本ローテーションの最初（Aなど、直近完了メニューの次）からリセットして再開してください。
 7. 送信されていない「未定の日（DEFAULT）」には予定を割り当てないでください。
+${scheduleInstruction.trim() ? `
+【ユーザーからの追加指示】
+${scheduleInstruction.trim()}
+上記の指示を最大限尊重しつつ、スケジュール配置ルールの範囲内で反映してください。
+` : ""}
 
 以下のJSONフォーマットで回答してください。余計な説明テキストは一切含めず、純粋なJSONのみを返してください。
 
@@ -1726,11 +1732,19 @@ ${getUserProfileContext()}
                 </div>
               )}
 
-              <div className={styles.calendarActions}>
+              <div className={styles.calendarActions} style={{ flexDirection: "column", gap: "8px" }}>
+                <input
+                  type="text"
+                  className={styles.textInput}
+                  placeholder="💬 例: 今週は胸を多めに / 肩が痛いので控えめに"
+                  value={scheduleInstruction}
+                  onChange={(e) => setScheduleInstruction(e.target.value)}
+                  style={{ fontSize: "0.75rem", padding: "8px 10px", width: "100%" }}
+                />
                 <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={() => buildScheduleWithAI()}>
                   <Sparkles size={14} /> AIスケジュール構築
                 </button>
-                <p style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "4px", textAlign: "center", lineHeight: "1.3" }}>
+                <p style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "0px", textAlign: "center", lineHeight: "1.3" }}>
                   ※カレンダー上で「👌行ける」「❓微妙」の日を設定した状態で実行してください。
                 </p>
               </div>
