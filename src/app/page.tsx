@@ -461,7 +461,7 @@ export default function Home() {
         baseMonday.setDate(base.getDate() + offset);
         
         const diffTime = d.getTime() - baseMonday.getTime();
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
         return Math.floor(diffDays / 7);
       };
 
@@ -568,6 +568,7 @@ ${getUserProfileContext()}
         // AI提案の中で、すでに完了している既存の予定とバッティングしないものを抽出し、バリデーションを行う
         const filteredAiProposal = aiProposal
           .filter(aiItem => {
+            if (!aiItem.date || isNaN(Date.parse(aiItem.date))) return false;
             const alreadyCompleted = targetSchedule.some(item => item.date === aiItem.date && item.completed);
             const itemDate = new Date(aiItem.date);
             const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
@@ -766,9 +767,9 @@ ${JSON.stringify(exerciseRecords, null, 2)}
             anyUpdated = true;
             return {
               ...ex,
-              weight: proposal.targetWeight,
-              reps: proposal.targetReps,
-              sets: proposal.targetSets
+              weight: typeof proposal.targetWeight === 'number' ? proposal.targetWeight : ex.weight,
+              reps: typeof proposal.targetReps === 'number' ? proposal.targetReps : ex.reps,
+              sets: typeof proposal.targetSets === 'number' ? proposal.targetSets : ex.sets
             };
           }
           return ex;
