@@ -42,6 +42,7 @@ type ScheduleItem = {
   completed?: boolean;
   customExercises?: Exercise[];
   adjustmentReason?: string;
+  completedExercises?: ExerciseRecord[];
 };
 
 type DateState = "DEFAULT" | "CONFIRMED_GO" | "CONFIRMED_NO" | "MAYBE";
@@ -119,10 +120,38 @@ export default function Home() {
   const [previousSchedule, setPreviousSchedule] = useState<ScheduleItem[] | null>(null);
   const [previousDateStates, setPreviousDateStates] = useState<DateStates | null>(null);
   const [showUndoBanner, setShowUndoBanner] = useState(false);
-
   // --- カレンダー描画用状態 ---
   const [dates, setDates] = useState<Date[]>([]);
   const [selectedDateStr, setSelectedDateStr] = useState<string>("");
+  const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth());
+  const [builderChatHistory, setBuilderChatHistory] = useState<{ role: string; parts: { text: string }[] }[]>([]);
+
+  // --- カレンダー月切り替えハンドラー ---
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentYear(currentYear - 1);
+      setCurrentMonth(11);
+    } else {
+      setCurrentMonth(currentMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentYear(currentYear + 1);
+      setCurrentMonth(0);
+    } else {
+      setCurrentMonth(currentMonth + 1);
+    }
+  };
+
+  const handleGoToToday = () => {
+    const today = new Date();
+    setCurrentYear(today.getFullYear());
+    setCurrentMonth(today.getMonth());
+    setSelectedDateStr(formatDate(today));
+  };
 
   // --- 記録入力用状態 (選択した日のワークアウト実績) ---
   const [currentWorkoutName, setCurrentWorkoutName] = useState<string>("");
@@ -176,6 +205,7 @@ export default function Home() {
       const savedDateStates = localStorage.getItem("fitrum_date_states");
       const savedStreak = localStorage.getItem("fitrum_streak");
       const savedProfile = localStorage.getItem("fitrum_user_profile");
+      const savedChatHistory = localStorage.getItem("fitrum_builder_chat_history");
 
       let loadedMenus = INITIAL_MENUS;
       if (savedKey) {
@@ -193,20 +223,22 @@ export default function Home() {
       if (savedDateStates) setDateStates(JSON.parse(savedDateStates));
       if (savedStreak) setStreak(parseInt(savedStreak, 10));
       if (savedProfile) setUserProfile(JSON.parse(savedProfile));
+      if (savedChatHistory) setBuilderChatHistory(JSON.parse(savedChatHistory));
 
-      const tempDates = [];
       const today = new Date();
       setSelectedDateStr(formatDate(today));
-
-      for (let i = 0; i < 30; i++) {
-        const nextDate = new Date();
-        nextDate.setDate(today.getDate() + i);
-        tempDates.push(nextDate);
-      }
-      setDates(tempDates);
     }
   }, []);
 
+  // カレンダー描画用日付の動的更新（無制限カレンダー対応）
+  useEffect(() => {
+    const days = [];
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push(new Date(currentYear, currentMonth, i));
+    }
+    setDates(days);
+  }, [currentYear, currentMonth]);
   // APIキーの保存
   const handleSaveApiKey = () => {
     if (!inputApiKey.trim()) {
@@ -321,13 +353,31 @@ export default function Home() {
       const end = new Date();
       end.setDate(today.getDate() + 29);
 
-      const confirmedDays = Object.keys(dateStates).filter(k => dateStates[k] === "CONFIRMED_GO");
-      const maybeDays = Object.keys(dateStates).filter(k => dateStates[k] === "MAYBE");
-      const noDays = Object.keys(dateStates).filter(k => dateStates[k] === "CONFIRMED_NO");
+      // 前後30日の範囲を設定してフィルタリング
+      const rangeStart = new Date(today);
+      rangeStart.setDate(today.getDate() - 30);
+      const rangeEnd = new Date(today);
+      rangeEnd.setDate(today.getDate() + 30);
+
+      const filterByRange = (dateStr: string) => {
+        const d = new Date(dateStr);
+        // 時刻をクリアして日付のみで比較
+        const compareDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const compareStart = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
+        const compareEnd = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
+        return compareDate >= compareStart && compareDate <= compareEnd;
+      };
+
+      const confirmedDays = Object.keys(dateStates)
+        .filter(k => dateStates[k] === "CONFIRMED_GO" && filterByRange(k));
+      const maybeDays = Object.keys(dateStates)
+        .filter(k => dateStates[k] === "MAYBE" && filterByRange(k));
+      const noDays = Object.keys(dateStates)
+        .filter(k => dateStates[k] === "CONFIRMED_NO" && filterByRange(k));
 
       const prompt = `
-あなたは科学的エビデンス（運動生理学・スポーツ科学）に基づく一流のパーソナルトレーナーです。
-ユーザーが選択したカレンダー日程に対し、登録されている「基本メニュー（种目内容・設定重量・回数）」を深く分析し、怪我のリスクを最小化し回復を最大化する最適な1ヶ月分のスケジュール（筋トレ予定の配置）を作成してください。
+あなたの役割は、科学的なエビデンス（運動生理学・スポーツ科学）に基づく一流のパーソナルトレーナーです。
+ユーザーが指定した日程に対して、登録された「基本メニュー」を参考に、怪我のリスクを最小化し回復を最大化する最適なスケジュールを作成することです。
 
 ${getUserProfileContext()}
 
@@ -341,14 +391,10 @@ ${getUserProfileContext()}
 - 開始日: ${formatDate(today)}
 - 終了日: ${formatDate(end)} (開始日から1ヶ月後)
 
-【超重要：スケジュール配置の生理学的ルール】
-1. **筋肉の回復期間（超回復）の確保**:
-   - 各メニュー(A, B, C...)に含まれる種目の主働筋（大胸筋、広背筋、大腿四頭筋など）を分析してください。
-   - 同じ主働筋を激しく使うメニューは、中48時間〜72時間（少なくとも中1日、できれば中2日）空けて配置してください。
-2. **多関節コンパウンド種目の干渉回避**:
-   - スクワットを含むメニューとデッドリフトを含むメニューは、必ず中1日以上のオフ（または下背部を使わないメニュー）を挟んでください。連続日程（中0日）での配置は厳禁です。
-3. **行ける日(確定・微妙)の優先と仮予定の挿入**:
-   - 確定している行ける日と微妙な日を優先し、頻度が足りない場合は「未定の日」からバランスの良い日程を選び、仮予定 (isTemp: true) としてメニューを割り当ててください。
+【スケジュール配置ルール】
+1. 各メニューに含まれる種目の主働筋を考慮し、同じ部位のトレーニングは中48〜72時間空けてください。
+2. スクワットとデッドリフトは連続しないようにし、必ず中1日以上のオフ（または下半身を使わないメニュー）を挟んでください。
+3. 行ける日（確定・微妙）を優先して配置し、不足する場合は「未定の日」から適切な日に仮予定 (isTemp: true) を割り当ててください。
 
 以下のJSONフォーマットで回答してください。余計な説明テキストは一切含めず、純粋なJSONのみを返してください。
 
@@ -376,8 +422,31 @@ ${getUserProfileContext()}
       const data = JSON.parse(response.text || "{}");
 
       if (data.schedule) {
-        setSchedule(data.schedule);
-        saveToLocalStorage("fitrum_schedule", data.schedule);
+        // AI提案の日程と既存の日程を安全にマージする
+        const aiProposal: ScheduleItem[] = data.schedule;
+
+        // 保護対象（期間外のもの、または期間内だがすでに完了しているもの）を抽出
+        const preservedSchedule = schedule.filter(item => {
+          const itemDate = new Date(item.date);
+          const isInRange = filterByRange(item.date);
+          
+          if (!isInRange) return true; // 期間外は保護
+          if (item.completed) return true; // 期間内だが完了済みは保護
+          return false; // 期間内の未完了予定はAI提案で上書きするため除外
+        });
+
+        // AI提案の中で、すでに完了している既存の予定とバッティングしないものを抽出
+        const filteredAiProposal = aiProposal.filter(aiItem => {
+          const alreadyCompleted = schedule.some(item => item.date === aiItem.date && item.completed);
+          return !alreadyCompleted;
+        });
+
+        // マージして日付順にソート
+        const mergedSchedule = [...preservedSchedule, ...filteredAiProposal];
+        mergedSchedule.sort((a, b) => a.date.localeCompare(b.date));
+
+        setSchedule(mergedSchedule);
+        saveToLocalStorage("fitrum_schedule", mergedSchedule);
       }
     } catch (err) {
       console.error(err);
@@ -412,8 +481,27 @@ ${getUserProfileContext()}
       setExerciseRecords(records);
     } else if (scheduled && scheduled.completed) {
       setCurrentWorkoutName(scheduled.workoutName + " (実施済み)");
-      setExerciseRecords([]);
-      setActiveAdjustmentReason("");
+      setActiveAdjustmentReason(scheduled.adjustmentReason || "");
+      
+      // 過去の実績履歴があればそれを復元表示する
+      if (scheduled.completedExercises && scheduled.completedExercises.length > 0) {
+        setExerciseRecords(scheduled.completedExercises);
+      } else {
+        // バックプレフィル：詳細実績が保存されていない過去データの場合のフォールバック
+        const exerciseList = scheduled.customExercises || menus[scheduled.workoutName] || [];
+        const fallbackRecords: ExerciseRecord[] = exerciseList.map(ex => ({
+          name: ex.name,
+          targetWeight: ex.weight,
+          targetReps: ex.reps,
+          targetSets: ex.sets,
+          sets: Array.from({ length: ex.sets }).map(() => ({
+            weight: ex.weight,
+            reps: ex.reps,
+            completed: true
+          }))
+        }));
+        setExerciseRecords(fallbackRecords);
+      }
     } else {
       setCurrentWorkoutName("");
       setExerciseRecords([]);
@@ -509,7 +597,11 @@ ${JSON.stringify(exerciseRecords, null, 2)}
   const applyProgressionAndSave = () => {
     const updatedSchedule = schedule.map(item => {
       if (item.date === selectedDateStr) {
-        return { ...item, completed: true };
+        return { 
+          ...item, 
+          completed: true,
+          completedExercises: JSON.parse(JSON.stringify(exerciseRecords))
+        };
       }
       return item;
     });
@@ -839,16 +931,45 @@ ${JSON.stringify(menus, null, 2)}
 `;
       }
 
+      let apiContents: any[] = [];
+      if (builderAction === "improve") {
+        apiContents = [
+          ...builderChatHistory,
+          { role: "user", parts: [{ text: prompt }] }
+        ];
+      } else {
+        apiContents = [
+          { role: "user", parts: [{ text: prompt }] }
+        ];
+      }
+
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: prompt,
+        contents: apiContents,
         config: {
           responseMimeType: "application/json",
           systemInstruction: "JSONフォーマットでメニューデータおよびカルテデータのみを出力してください。",
         },
       });
 
-      const data = JSON.parse(response.text || "{}");
+      const responseText = response.text || "";
+      const data = JSON.parse(responseText || "{}");
+
+      // チャット履歴の更新と永続化
+      let finalHistory = [];
+      if (builderAction === "improve") {
+        finalHistory = [
+          ...apiContents,
+          { role: "model", parts: [{ text: responseText }] }
+        ];
+      } else {
+        finalHistory = [
+          { role: "user", parts: [{ text: prompt }] },
+          { role: "model", parts: [{ text: responseText }] }
+        ];
+      }
+      setBuilderChatHistory(finalHistory);
+      saveToLocalStorage("fitrum_builder_chat_history", finalHistory);
 
       if ((builderAction === "create" || builderAction === "import") && (data.menus || data.profile)) {
         if (data.menus && Object.keys(menus).length > 0) {
@@ -1056,6 +1177,9 @@ ${getUserProfileContext()}
     alert("手動の変更を保存しました！");
   };
 
+  const selectedScheduleItem = schedule.find(item => item.date === selectedDateStr);
+  const isWorkoutCompleted = selectedScheduleItem?.completed || false;
+
   return (
     <div className={styles.container}>
       {/* ヘッダー */}
@@ -1142,7 +1266,7 @@ ${getUserProfileContext()}
                 {currentWorkoutName && <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginLeft: "8px" }}>- {currentWorkoutName}</span>}
               </div>
               <div style={{ display: "flex", gap: "6px" }}>
-                {currentWorkoutName && !currentWorkoutName.includes("(実施済み)") && (
+                {currentWorkoutName && !isWorkoutCompleted && (
                   <>
                     <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={() => setShowAdjustModal(true)}>
                       <Activity size={12} style={{ marginRight: "2px" }} /> AI体調調整
@@ -1156,72 +1280,74 @@ ${getUserProfileContext()}
             </div>
 
             {/* 選択日の予定ステータス変更パネル（スマホ操作性の向上） */}
-            <div style={{ 
-              display: "flex", 
-              gap: "6px", 
-              marginTop: "8px", 
-              marginBottom: "16px", 
-              flexWrap: "wrap",
-              background: "rgba(255, 255, 255, 0.02)",
-              padding: "8px",
-              borderRadius: "8px",
-              border: "1px solid rgba(255, 255, 255, 0.05)",
-              alignItems: "center"
-            }}>
-              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginRight: "4px" }}>予定ステータス:</span>
-              <button 
-                className={styles.btnSecondary} 
-                style={{ 
-                  padding: "4px 8px", 
-                  fontSize: "0.7rem", 
-                  background: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "var(--status-go)" : "", 
-                  color: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "#000" : "",
-                  border: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "none" : "1px solid rgba(255,255,255,0.1)"
-                }}
-                onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_GO")}
-              >
-                👍 行ける
-              </button>
-              <button 
-                className={styles.btnSecondary} 
-                style={{ 
-                  padding: "4px 8px", 
-                  fontSize: "0.7rem", 
-                  background: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "var(--status-no)" : "", 
-                  color: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "#fff" : "",
-                  border: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "none" : "1px solid rgba(255,255,255,0.1)"
-                }}
-                onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_NO")}
-              >
-                ☕️ オフにする (スライド)
-              </button>
-              <button 
-                className={styles.btnSecondary} 
-                style={{ 
-                  padding: "4px 8px", 
-                  fontSize: "0.7rem", 
-                  background: dateStates[selectedDateStr] === "MAYBE" ? "var(--status-maybe)" : "", 
-                  color: dateStates[selectedDateStr] === "MAYBE" ? "#000" : "",
-                  border: dateStates[selectedDateStr] === "MAYBE" ? "none" : "1px solid rgba(255,255,255,0.1)"
-                }}
-                onClick={() => setSpecificDateState(selectedDateStr, "MAYBE")}
-              >
-                ❓ 微妙
-              </button>
-              <button 
-                className={styles.btnSecondary} 
-                style={{ 
-                  padding: "4px 8px", 
-                  fontSize: "0.7rem", 
-                  background: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "rgba(255,255,255,0.1)" : "",
-                  color: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "var(--text-main)" : "",
-                  border: "1px solid rgba(255,255,255,0.1)"
-                }}
-                onClick={() => setSpecificDateState(selectedDateStr, "DEFAULT")}
-              >
-                未定
-              </button>
-            </div>
+            {!isWorkoutCompleted && (
+              <div style={{ 
+                display: "flex", 
+                gap: "6px", 
+                marginTop: "8px", 
+                marginBottom: "16px", 
+                flexWrap: "wrap",
+                background: "rgba(255, 255, 255, 0.02)",
+                padding: "8px",
+                borderRadius: "8px",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
+                alignItems: "center"
+              }}>
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginRight: "4px" }}>予定ステータス:</span>
+                <button 
+                  className={styles.btnSecondary} 
+                  style={{ 
+                    padding: "4px 8px", 
+                    fontSize: "0.7rem", 
+                    background: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "var(--status-go)" : "", 
+                    color: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "#000" : "",
+                    border: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "none" : "1px solid rgba(255,255,255,0.1)"
+                  }}
+                  onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_GO")}
+                >
+                  👍 行ける
+                </button>
+                <button 
+                  className={styles.btnSecondary} 
+                  style={{ 
+                    padding: "4px 8px", 
+                    fontSize: "0.7rem", 
+                    background: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "var(--status-no)" : "", 
+                    color: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "#fff" : "",
+                    border: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "none" : "1px solid rgba(255,255,255,0.1)"
+                  }}
+                  onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_NO")}
+                >
+                  ☕️ オフにする (スライド)
+                </button>
+                <button 
+                  className={styles.btnSecondary} 
+                  style={{ 
+                    padding: "4px 8px", 
+                    fontSize: "0.7rem", 
+                    background: dateStates[selectedDateStr] === "MAYBE" ? "var(--status-maybe)" : "", 
+                    color: dateStates[selectedDateStr] === "MAYBE" ? "#000" : "",
+                    border: dateStates[selectedDateStr] === "MAYBE" ? "none" : "1px solid rgba(255,255,255,0.1)"
+                  }}
+                  onClick={() => setSpecificDateState(selectedDateStr, "MAYBE")}
+                >
+                  ❓ 微妙
+                </button>
+                <button 
+                  className={styles.btnSecondary} 
+                  style={{ 
+                    padding: "4px 8px", 
+                    fontSize: "0.7rem", 
+                    background: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "rgba(255,255,255,0.1)" : "",
+                    color: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "var(--text-main)" : "",
+                    border: "1px solid rgba(255,255,255,0.1)"
+                  }}
+                  onClick={() => setSpecificDateState(selectedDateStr, "DEFAULT")}
+                >
+                  未定
+                </button>
+              </div>
+            )}
 
             {/* AI体調調整が適用されている場合のメッセージ */}
             {activeAdjustmentReason && (
@@ -1239,13 +1365,15 @@ ${getUserProfileContext()}
                   <Info size={14} style={{ color: "var(--color-primary)" }} />
                   <span>💡 {activeAdjustmentReason}</span>
                 </div>
-                <button 
-                  className={styles.adjustBtn} 
-                  style={{ color: "var(--status-no)", background: "transparent", border: "none", cursor: "pointer" }}
-                  onClick={resetAIWorkoutAdjustment}
-                >
-                  <RotateCcw size={12} />
-                </button>
+                {!isWorkoutCompleted && (
+                  <button 
+                    className={styles.adjustBtn} 
+                    style={{ color: "var(--status-no)", background: "transparent", border: "none", cursor: "pointer" }}
+                    onClick={resetAIWorkoutAdjustment}
+                  >
+                    <RotateCcw size={12} />
+                  </button>
+                )}
               </div>
             )}
 
@@ -1257,13 +1385,15 @@ ${getUserProfileContext()}
                       <span className={styles.exerciseName}>{ex.name}</span>
                       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                         <span className={styles.targetInfo}>{ex.targetWeight}kg × {ex.targetReps}回</span>
-                        <button 
-                          className={styles.btnSecondary} 
-                          style={{ padding: "4px 8px", fontSize: "0.7rem", height: "24px" }}
-                          onClick={() => requestAlternative(ex.name, exIdx)}
-                        >
-                          代わり
-                        </button>
+                        {!isWorkoutCompleted && (
+                          <button 
+                            className={styles.btnSecondary} 
+                            style={{ padding: "4px 8px", fontSize: "0.7rem", height: "24px" }}
+                            onClick={() => requestAlternative(ex.name, exIdx)}
+                          >
+                            代わり
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1274,42 +1404,54 @@ ${getUserProfileContext()}
                           <div className={styles.setInputGroup}>
                             {/* 重量 */}
                             <div className={styles.inputWrapper}>
-                              <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "weight", set.weight - 2.5)}>
-                                <Minus size={12} />
-                              </button>
+                              {!isWorkoutCompleted && (
+                                <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "weight", set.weight - 2.5)}>
+                                  <Minus size={12} />
+                                </button>
+                              )}
                               <input 
                                 type="number" 
                                 className={styles.numInput} 
                                 value={set.weight} 
+                                disabled={isWorkoutCompleted}
                                 onChange={(e) => handleSetChange(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)} 
                               />
                               <span className={styles.inputLabel}>kg</span>
-                              <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "weight", set.weight + 2.5)}>
-                                <Plus size={12} />
-                              </button>
+                              {!isWorkoutCompleted && (
+                                <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "weight", set.weight + 2.5)}>
+                                  <Plus size={12} />
+                                </button>
+                              )}
                             </div>
 
                             {/* 回数 */}
                             <div className={styles.inputWrapper}>
-                              <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "reps", set.reps - 1)}>
-                                <Minus size={12} />
-                              </button>
+                              {!isWorkoutCompleted && (
+                                <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "reps", set.reps - 1)}>
+                                  <Minus size={12} />
+                                </button>
+                              )}
                               <input 
                                 type="number" 
                                 className={styles.numInput} 
                                 value={set.reps} 
+                                disabled={isWorkoutCompleted}
                                 onChange={(e) => handleSetChange(exIdx, setIdx, "reps", parseInt(e.target.value, 10) || 0)} 
                               />
                               <span className={styles.inputLabel}>回</span>
-                              <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "reps", set.reps + 1)}>
-                                <Plus size={12} />
-                              </button>
+                              {!isWorkoutCompleted && (
+                                <button className={styles.adjustBtn} onClick={() => handleSetChange(exIdx, setIdx, "reps", set.reps + 1)}>
+                                  <Plus size={12} />
+                                </button>
+                              )}
                             </div>
 
                             {/* チェック */}
                             <button 
                               className={`${styles.checkBtn} ${set.completed ? styles.checkBtnActive : ""}`}
+                              disabled={isWorkoutCompleted}
                               onClick={() => toggleSetComplete(exIdx, setIdx)}
+                              style={isWorkoutCompleted ? { cursor: "default" } : {}}
                             >
                               <Check size={14} />
                             </button>
@@ -1320,9 +1462,31 @@ ${getUserProfileContext()}
                   </div>
                 ))}
                 
-                <button className={`${styles.btnPrimary} ${styles.submitBtn}`} onClick={completeWorkout}>
-                  <Zap size={16} /> 本日のトレーニングを完了
-                </button>
+                {isWorkoutCompleted ? (
+                  <div style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "16px",
+                    background: "rgba(0, 255, 135, 0.05)",
+                    border: "1px solid var(--status-go)",
+                    borderRadius: "12px",
+                    marginTop: "16px",
+                    width: "100%"
+                  }}>
+                    <span style={{ color: "var(--status-go)", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Check size={16} /> この日のトレーニング実績は保存済みです
+                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                      過去の実績データは読み取り専用で保護されています
+                    </span>
+                  </div>
+                ) : (
+                  <button className={`${styles.btnPrimary} ${styles.submitBtn}`} onClick={completeWorkout}>
+                    <Zap size={16} /> 本日のトレーニングを完了
+                  </button>
+                )}
               </div>
             ) : (
               <div className={styles.noWorkoutText}>
@@ -1337,14 +1501,26 @@ ${getUserProfileContext()}
 
           {/* カレンダー */}
           <div className={styles.calendarSection}>
-            <div className={styles.sectionTitle}>
-              <span>📅 カレンダー（最大1ヶ月）</span>
+            <div className={styles.sectionTitle} style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1rem", fontWeight: "700" }}>📅 {currentYear}年 {currentMonth + 1}月</span>
+                <div style={{ display: "flex", gap: "4px" }}>
+                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handlePrevMonth}>◀</button>
+                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleGoToToday}>今月</button>
+                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleNextMonth}>▶</button>
+                </div>
+              </div>
               <span className={styles.helperText}>タップ：日付選択（上のパネルで予定を調整）</span>
             </div>
             
             <div className={styles.calendarGrid}>
               {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
                 <div key={i} className={styles.weekdayHeader}>{d}</div>
+              ))}
+              
+              {/* 曜日のズレ修正：その月の1日の曜日に合わせてダミーマスを挿入 */}
+              {dates.length > 0 && Array.from({ length: dates[0].getDay() }).map((_, i) => (
+                <div key={`empty-${i}`} style={{ aspectRatio: "1" }} />
               ))}
               
               {dates.map((d, idx) => {
