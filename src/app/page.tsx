@@ -70,6 +70,13 @@ type UserProfile = {
   equipment: string;
 };
 
+type MenuHistoryItem = {
+  id: string;
+  timestamp: string;
+  description: string;
+  menus: Menus;
+};
+
 const INITIAL_PROFILE: UserProfile = {
   goals: "健康維持と筋肥大",
   experience: "初心者〜中級者",
@@ -126,6 +133,8 @@ export default function Home() {
   const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
   const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth());
   const [builderChatHistory, setBuilderChatHistory] = useState<{ role: string; parts: { text: string }[] }[]>([]);
+  const [menuHistory, setMenuHistory] = useState<MenuHistoryItem[]>([]);
+  const [lastTapInfo, setLastTapInfo] = useState<{ dateStr: string; time: number }>({ dateStr: "", time: 0 });
 
   // --- カレンダー月切り替えハンドラー ---
   const handlePrevMonth = () => {
@@ -198,6 +207,7 @@ export default function Home() {
       migrate("aurafit_date_states", "fitrum_date_states");
       migrate("aurafit_streak", "fitrum_streak");
       migrate("aurafit_user_profile", "fitrum_user_profile");
+      migrate("aurafit_menu_history", "fitrum_menu_history");
 
       const savedKey = localStorage.getItem("fitrum_api_key");
       const savedMenus = localStorage.getItem("fitrum_menus");
@@ -206,6 +216,7 @@ export default function Home() {
       const savedStreak = localStorage.getItem("fitrum_streak");
       const savedProfile = localStorage.getItem("fitrum_user_profile");
       const savedChatHistory = localStorage.getItem("fitrum_builder_chat_history");
+      const savedMenuHistory = localStorage.getItem("fitrum_menu_history");
 
       let loadedMenus = INITIAL_MENUS;
       if (savedKey) {
@@ -224,6 +235,7 @@ export default function Home() {
       if (savedStreak) setStreak(parseInt(savedStreak, 10));
       if (savedProfile) setUserProfile(JSON.parse(savedProfile));
       if (savedChatHistory) setBuilderChatHistory(JSON.parse(savedChatHistory));
+      if (savedMenuHistory) setMenuHistory(JSON.parse(savedMenuHistory));
 
       const today = new Date();
       setSelectedDateStr(formatDate(today));
@@ -254,6 +266,48 @@ export default function Home() {
   // 状態の変更をLocalStorageに反映するヘルパー
   const saveToLocalStorage = (key: string, data: any) => {
     localStorage.setItem(key, JSON.stringify(data));
+  };
+
+  // メニュー変更履歴を保存するヘルパー
+  const saveMenuToHistory = (description: string, targetMenus: Menus) => {
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const newItem: MenuHistoryItem = {
+      id,
+      timestamp,
+      description,
+      menus: JSON.parse(JSON.stringify(targetMenus))
+    };
+    
+    // 直近10件のみ保持
+    setMenuHistory(prev => {
+      const updated = [newItem, ...prev].slice(0, 10);
+      localStorage.setItem("fitrum_menu_history", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // メニューのロールバックを実行する処理
+  const rollbackMenu = (historyId: string) => {
+    const targetItem = menuHistory.find(item => item.id === historyId);
+    if (!targetItem) {
+      alert("該当する履歴データが見つかりません。");
+      return;
+    }
+
+    if (confirm(`【${targetItem.timestamp}】時点のメニューに復元しますか？\n（現在の基本メニューは履歴にバックアップ保存されたあと上書きされます）`)) {
+      // 復元前に現在のメニューをバックアップ保存
+      saveMenuToHistory(`復元前のバックアップ (${targetItem.timestamp})`, menus);
+
+      const restoredMenus = JSON.parse(JSON.stringify(targetItem.menus));
+      setMenus(restoredMenus);
+      setEditableMenus(JSON.parse(JSON.stringify(restoredMenus)));
+      saveToLocalStorage("fitrum_menus", restoredMenus);
+      
+      alert("基本メニューを復元しました！");
+    }
   };
 
   // 日付フォーマットヘルパー
@@ -316,6 +370,22 @@ export default function Home() {
     else if (current === "MAYBE") next = "DEFAULT";
 
     setSpecificDateState(dateStr, next);
+  };
+
+  // カレンダー日付クリックハンドラー（シングルタップで選択、ダブルタップで行ける日をトグル）
+  const handleDayClick = (dateStr: string) => {
+    const now = Date.now();
+    const isDoubleTap = lastTapInfo.dateStr === dateStr && (now - lastTapInfo.time) < 300;
+
+    if (isDoubleTap) {
+      const currentState = dateStates[dateStr] || "DEFAULT";
+      const nextState = currentState === "CONFIRMED_GO" ? "DEFAULT" : "CONFIRMED_GO";
+      setSpecificDateState(dateStr, nextState);
+      setLastTapInfo({ dateStr: "", time: 0 });
+    } else {
+      setSelectedDateStr(dateStr);
+      setLastTapInfo({ dateStr, time: now });
+    }
   };
 
   const getUserProfileContext = () => {
@@ -628,6 +698,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       setMenus(updatedMenus);
       setEditableMenus(JSON.parse(JSON.stringify(updatedMenus)));
       saveToLocalStorage("fitrum_menus", updatedMenus);
+      saveMenuToHistory(`重量更新 (ルーティン ${pureWorkoutName})`, updatedMenus);
     }
 
     const newStreak = streak + 1;
@@ -841,6 +912,7 @@ ${JSON.stringify(baseExercises, null, 2)}
               setMenus(parsedData.menus);
               setEditableMenus(JSON.parse(JSON.stringify(parsedData.menus)));
               saveToLocalStorage("fitrum_menus", parsedData.menus);
+              saveMenuToHistory("過去メニューのインポート (JSON)", parsedData.menus);
             }
             if (parsedData.profile) {
               setUserProfile(parsedData.profile);
@@ -986,6 +1058,8 @@ ${JSON.stringify(menus, null, 2)}
           setMenus(data.menus);
           setEditableMenus(JSON.parse(JSON.stringify(data.menus)));
           saveToLocalStorage("fitrum_menus", data.menus);
+          const historyDesc = builderAction === "import" ? "過去メニューのインポート (AI解析)" : "AI新規メニュー作成";
+          saveMenuToHistory(historyDesc, data.menus);
         }
         if (data.profile) {
           setUserProfile(data.profile);
@@ -1000,6 +1074,7 @@ ${JSON.stringify(menus, null, 2)}
         setMenus(data.updatedMenus);
         setEditableMenus(JSON.parse(JSON.stringify(data.updatedMenus)));
         saveToLocalStorage("fitrum_menus", data.updatedMenus);
+        saveMenuToHistory(`AIメニュー改善: ${aiRequestText.substring(0, 30)}${aiRequestText.length > 30 ? "..." : ""}`, data.updatedMenus);
         setAiBuilderResponse(`【改善内容】\n${data.explanation || "メニューを最適化しました。"}`);
       }
     } catch (err) {
@@ -1173,6 +1248,7 @@ ${getUserProfileContext()}
     setMenus(cleaned);
     setEditableMenus(JSON.parse(JSON.stringify(cleaned)));
     saveToLocalStorage("fitrum_menus", cleaned);
+    saveMenuToHistory("手動編集", cleaned);
     setIsEditingManual(false);
     alert("手動の変更を保存しました！");
   };
@@ -1510,7 +1586,7 @@ ${getUserProfileContext()}
                   <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleNextMonth}>▶</button>
                 </div>
               </div>
-              <span className={styles.helperText}>タップ：日付選択（上のパネルで予定を調整）</span>
+              <span className={styles.helperText}>タップ：日付選択 / ダブルタップ：行ける日（👍）トグル</span>
             </div>
             
             <div className={styles.calendarGrid}>
@@ -1539,7 +1615,7 @@ ${getUserProfileContext()}
                   <button 
                     key={idx} 
                     className={`${styles.calendarDay} ${stateClass} ${isSelected ? styles.selectedDay : ""}`}
-                    onClick={() => setSelectedDateStr(dateStr)}
+                    onClick={() => handleDayClick(dateStr)}
                   >
                     <span className={styles.dayLabel}>{d.getDate()}</span>
                     {isCompleted ? (
@@ -1913,6 +1989,40 @@ ${getUserProfileContext()}
               </div>
             )}
           </div>
+
+          {/* メニュー変更履歴 */}
+          {menuHistory.length > 0 && (
+            <div className={styles.savedMenusCard} style={{ marginTop: "20px", background: "rgba(255,255,255,0.01)" }}>
+              <h3 style={{ fontSize: "0.9rem", fontWeight: "700", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", paddingBottom: "8px", marginBottom: "12px" }}>
+                ↩️ メニュー変更履歴（過去のバージョンに戻す）
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {menuHistory.map((item) => (
+                  <div key={item.id} style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between", 
+                    alignItems: "center", 
+                    background: "rgba(255, 255, 255, 0.02)", 
+                    padding: "8px 12px", 
+                    borderRadius: "10px", 
+                    border: "1px solid rgba(255, 255, 255, 0.04)" 
+                  }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", flex: 1, marginRight: "8px" }}>
+                      <span style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>{item.timestamp}</span>
+                      <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-main)", wordBreak: "break-all" }}>{item.description}</span>
+                    </div>
+                    <button 
+                      className={styles.btnSecondary} 
+                      style={{ padding: "4px 10px", fontSize: "0.7rem", flex: "none", height: "28px" }}
+                      onClick={() => rollbackMenu(item.id)}
+                    >
+                      復元
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
