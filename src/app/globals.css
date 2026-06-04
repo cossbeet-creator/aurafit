@@ -1,36 +1,36 @@
 :root {
   /* ==========================================
-     ダークテーマ (デフォルト)
+     ダークテーマ (デフォルト) - シック＆プレミアム
      ========================================== */
-  --bg-main: #0c0a12;
-  --bg-card: rgba(255, 255, 255, 0.03);
-  --bg-card-hover: rgba(255, 255, 255, 0.06);
-  --border-color: rgba(255, 255, 255, 0.07);
+  --bg-main: #0e0e11;
+  --bg-card: rgba(255, 255, 255, 0.02);
+  --bg-card-hover: rgba(255, 255, 255, 0.04);
+  --border-color: rgba(255, 255, 255, 0.05);
   
-  --text-main: #f3f1f8;
-  --text-muted: #8c889d;
-  --text-dark: #121016;
+  --text-main: #e8e8ed;
+  --text-muted: #7c7c88;
+  --text-dark: #0e0e11;
 
-  /* アクセントカラー */
-  --color-primary: #00f2fe; /* エレクトリックシアン */
-  --color-secondary: #f35588; /* ネオンマゼンタ */
+  /* シックなアクセントカラー */
+  --color-primary: #9baec4; /* スモーキーアッシュブルー */
+  --color-secondary: #c2b09a; /* マットアッシュブロンズ */
   
-  /* カレンダーステート */
-  --status-default: #24222c; /* 未定 */
-  --status-go: #00ff87; /* 行ける日 */
-  --status-no: #ff3a55; /* 行けない日 */
-  --status-maybe: #ff9d00; /* 微妙な日 */
+  /* カレンダーステート (彩度を抑えたシックな中間色) */
+  --status-default: #1e1e24; /* 未定 */
+  --status-go: #6e8c7c; /* セージグリーン (上品な緑) */
+  --status-no: #b2767a; /* ダスティローズ (上品な赤) */
+  --status-maybe: #b88e6e; /* サンドオカー (上品なオレンジ) */
   
-  /* ソフトな光彩 (ダーク用) */
-  --glow-primary: 0 4px 20px rgba(0, 242, 254, 0.15);
-  --glow-go: 0 4px 15px rgba(0, 255, 135, 0.2);
-  --glow-no: 0 4px 15px rgba(255, 58, 85, 0.15);
-  --glow-maybe: 0 4px 15px rgba(255, 157, 0, 0.2);
+  /* ソフトな光彩 (光を抑え、上品な陰影へ) */
+  --glow-primary: 0 4px 20px rgba(155, 174, 196, 0.08);
+  --glow-go: 0 4px 15px rgba(110, 140, 124, 0.1);
+  --glow-no: 0 4px 15px rgba(178, 118, 122, 0.08);
+  --glow-maybe: 0 4px 15px rgba(184, 142, 110, 0.1);
   
-  /* グラスモーフィズム */
-  --glass-bg: rgba(18, 15, 26, 0.75);
-  --glass-border: rgba(255, 255, 255, 0.06);
-  --glass-blur: blur(20px);
+  /* グラスモーフィズム (より深く高級感のあるチャコール) */
+  --glass-bg: rgba(16, 16, 20, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.04);
+  --glass-blur: blur(25px);
 }
 
 @media (prefers-color-scheme: light) {
@@ -98,8 +98,8 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background-image: 
-    radial-gradient(circle at 10% 20%, rgba(0, 242, 254, 0.03) 0%, transparent 40%),
-    radial-gradient(circle at 90% 80%, rgba(243, 53, 136, 0.03) 0%, transparent 40%);
+    radial-gradient(circle at 10% 20%, rgba(155, 174, 196, 0.02) 0%, transparent 45%),
+    radial-gradient(circle at 90% 80%, rgba(194, 176, 154, 0.02) 0%, transparent 45%);
 }
 
 @media (prefers-color-scheme: light) {
