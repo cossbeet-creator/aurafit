@@ -35,7 +35,15 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="apple-touch-icon" href="/icon.png" />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* 横画面ブロッカー（モバイルのみCSSで表示） */}
+        <div className="landscapeBlocker">
+          <div className="rotateIcon">📱</div>
+          <p>画面を縦に戻してください</p>
+          <span>Fitrumは縦画面でのご利用を推奨しています</span>
+        </div>
+      </body>
     </html>
   );
 }

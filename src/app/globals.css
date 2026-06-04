@@ -80,11 +80,19 @@
 body {
   background-color: var(--bg-main);
   color: var(--text-main);
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   position: relative;
   transition: background-color 0.3s ease, color 0.3s ease;
   background-attachment: fixed;
+}
+
+/* 横画面時にbodyのスクロールをロックし、高さ計算の狂いを防止 */
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  body {
+    overflow: hidden;
+    height: 100dvh;
+  }
 }
 
 /* ライト/ダークでの背景グラデーション切り替え */
@@ -129,5 +137,51 @@ body::before {
 @media (prefers-color-scheme: dark) {
   ::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* ========================================
+   横画面ブロック（モバイルのみ）
+   ======================================== */
+.landscapeBlocker {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: var(--bg-main);
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  gap: 16px;
+  text-align: center;
+  padding: 24px;
+}
+
+.landscapeBlocker .rotateIcon {
+  font-size: 3rem;
+  animation: rotateHint 2s ease-in-out infinite;
+}
+
+.landscapeBlocker p {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.landscapeBlocker span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+@keyframes rotateHint {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-30deg); }
+  75% { transform: rotate(30deg); }
+}
+
+/* モバイル端末のみ対象（高さ500px以下の横画面） */
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  .landscapeBlocker {
+    display: flex;
   }
 }
