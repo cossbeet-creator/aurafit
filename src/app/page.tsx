@@ -68,6 +68,7 @@ type UserProfile = {
   limitations: string;
   preferences: string;
   equipment: string;
+  frequency: number;
 };
 
 type MenuHistoryItem = {
@@ -82,7 +83,8 @@ const INITIAL_PROFILE: UserProfile = {
   experience: "初心者〜中級者",
   limitations: "なし（痛みやケガなし）",
   preferences: "特になし",
-  equipment: "ジムのフル器具"
+  equipment: "ジムのフル器具",
+  frequency: 3
 };
 
 // -------------------------------------------------------------
@@ -183,9 +185,6 @@ export default function Home() {
   const [aiRequestText, setAiRequestText] = useState("");
   const [builderAction, setBuilderAction] = useState<"create" | "improve" | "import" | "alternative">("improve");
   const [aiBuilderResponse, setAiBuilderResponse] = useState<string>("");
-  const [frequency, setFrequency] = useState(3);
-  const [goals, setGoals] = useState("胸と背中を大きくしたい");
-  const [equipment, setEquipment] = useState("ジムのフル器具");
 
   // 手動編集用のテンポラリメニュー状態
   const [editableMenus, setEditableMenus] = useState<Menus>({});
@@ -462,8 +461,8 @@ ${getUserProfileContext()}
 - 確定している行ける日 (confirmedDays): [${confirmedDays.join(", ")}]
 - 行けるかもしれない微妙な日 (maybeDays): [${maybeDays.join(", ")}]
 - 絶対に行けないオフ日 (noDays): [${noDays.join(", ")}]
-- 週の目標頻度: 約 ${frequency} 回
-- トレーニング目標: "${goals}"
+- 週の目標頻度: 約 ${userProfile.frequency} 回
+- トレーニング目標: "${userProfile.goals}"
 - 現在設定されている基本メニュー (menus): ${JSON.stringify(menus, null, 2)}
 - 開始日: ${formatDate(today)}
 - 終了日: ${formatDate(end)} (開始日から1ヶ月後)
@@ -472,7 +471,7 @@ ${getUserProfileContext()}
 1. 各メニューに含まれる種目の主働筋を考慮し、同じ部位のトレーニングは中48〜72時間空けてください。
 2. スクワットとデッドリフトは連続しないようにし、必ず中1日以上のオフ（または下半身を使わないメニュー）を挟んでください。
 3. 必ず今日（開始日）以降の日程のみに配置し、過去の日付には一切配置しないでください。
-4. トレーニング予定は、ユーザーが指定した「確定している行ける日 (confirmedDays)」および「行けるかもしれない微妙な日 (maybeDays)」の中だけでやりくりして配置してください。送信されていない「未定の日（DEFAULT）」には予定を割り当てないでください。もし行ける日が不足していて目標頻度（週${frequency}回）を満たせない場合でも、未定の日には配置せず、指定された日程の中だけで可能な限り（例：週1〜2回など）配置してください。
+4. トレーニング予定は、ユーザーが指定した「確定している行ける日 (confirmedDays)」および「行けるかもしれない微妙な日 (maybeDays)」の中だけでやりくりして配置してください。送信されていない「未定の日（DEFAULT）」には予定を割り当てないでください。もし行ける日が不足していて目標頻度（週${userProfile.frequency}回）を満たせない場合でも、未定の日には配置せず、指定された日程の中だけで可能な限り（例：週1〜2回など）配置してください。
 
 以下のJSONフォーマットで回答してください。余計な説明テキストは一切含めず、純粋なJSONのみを返してください。
 
@@ -956,9 +955,9 @@ ${JSON.stringify(baseExercises, null, 2)}
 ユーザーの条件に基づいて、最適な筋トレメニューを作成してください。
 
 【ユーザー条件】
-- 目標: "${goals}"
-- 週の頻度: ${frequency} 日
-- 利用可能な器具: "${equipment}"
+- 目標: "${userProfile.goals}"
+- 週の頻度: ${userProfile.frequency} 日
+- 利用可能な器具: "${userProfile.equipment}"
 
 以下のJSONフォーマットで回答してください。
 
@@ -1122,7 +1121,7 @@ ${getUserProfileContext()}
 - 代替したい種目: "${exerciseName}"
 - 元の予定負荷: 重量 ${originalWeight}kg × ${originalReps}回 × ${originalSets}セット
 - 代替を希望する理由: "混雑、または痛みのため"
-- 使用可能な器具: "${equipment}"
+- 使用可能な器具: "${userProfile.equipment}"
 
 【重量設定の指示】
 - 提案する代替種目の負荷（重量・回数・セット数）は、元の予定負荷と同等の運動強度（主働筋への刺激量）になるように運動生理学的に換算して決定してください。
@@ -1668,20 +1667,9 @@ ${getUserProfileContext()}
           <div className={styles.aiChatBox}>
             {builderAction === "create" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <div>
-                  <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>目標 (部位や強度)</label>
-                  <input type="text" className={styles.textInput} style={{ width: "100%" }} value={goals} onChange={(e) => setGoals(e.target.value)} />
-                </div>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>週の頻度</label>
-                    <input type="number" className={styles.textInput} style={{ width: "100%" }} value={frequency} onChange={(e) => setFrequency(parseInt(e.target.value, 10) || 3)} />
-                  </div>
-                  <div style={{ flex: 2 }}>
-                    <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>使える器具</label>
-                    <input type="text" className={styles.textInput} style={{ width: "100%" }} value={equipment} onChange={(e) => setEquipment(e.target.value)} />
-                  </div>
-                </div>
+                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: "1.5" }}>
+                  💡 下記の「AIカルテ」に登録されている情報（目標、週の目標頻度、使用可能器具）に基づいて、AIが新しい最適な筋トレメニューをゼロから構築します。
+                </p>
                 <button className={styles.btnPrimary} style={{ marginTop: "8px" }} onClick={handleAIBuilderSubmit}>
                   AI新メニューを適用
                 </button>
@@ -1756,6 +1744,20 @@ ${getUserProfileContext()}
                         value={userProfile.goals} 
                         onChange={(e) => {
                           const updated = { ...userProfile, goals: e.target.value };
+                          setUserProfile(updated);
+                          saveToLocalStorage("fitrum_user_profile", updated);
+                        }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>週の目標頻度（回）</label>
+                      <input 
+                        type="number" 
+                        className={styles.textInput} 
+                        style={{ width: "100%", padding: "4px 8px", fontSize: "0.75rem" }} 
+                        value={userProfile.frequency} 
+                        onChange={(e) => {
+                          const updated = { ...userProfile, frequency: Math.max(1, parseInt(e.target.value, 10) || 3) };
                           setUserProfile(updated);
                           saveToLocalStorage("fitrum_user_profile", updated);
                         }} 
