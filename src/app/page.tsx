@@ -1370,6 +1370,57 @@ ${getUserProfileContext()}
                 <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-maybe)" }}></span> ❓</span>
               </div>
 
+              {selectedDateStr && (
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between", 
+                  alignItems: "center", 
+                  gap: "8px", 
+                  background: "rgba(255,255,255,0.02)", 
+                  padding: "6px 12px", 
+                  borderRadius: "12px", 
+                  border: "1px solid rgba(255,255,255,0.05)" 
+                }}>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    選択日のステータス:
+                  </span>
+                  <div style={{ display: "flex", gap: "4px", background: "rgba(255,255,255,0.03)", padding: "2px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <button 
+                      onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_GO")}
+                      style={{
+                        background: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "var(--status-go)" : "transparent",
+                        border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "CONFIRMED_GO" ? 1 : 0.4
+                      }}
+                      title="👌 行ける"
+                    >👌</button>
+                    <button 
+                      onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_NO")}
+                      style={{
+                        background: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "var(--status-no)" : "transparent",
+                        border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "CONFIRMED_NO" ? 1 : 0.4
+                      }}
+                      title="❌ オフ (スライド)"
+                    >❌</button>
+                    <button 
+                      onClick={() => setSpecificDateState(selectedDateStr, "MAYBE")}
+                      style={{
+                        background: dateStates[selectedDateStr] === "MAYBE" ? "var(--status-maybe)" : "transparent",
+                        border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "MAYBE" ? 1 : 0.4
+                      }}
+                      title="微妙"
+                    >❓</button>
+                    <button 
+                      onClick={() => setSpecificDateState(selectedDateStr, "DEFAULT")}
+                      style={{
+                        background: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "rgba(255,255,255,0.15)" : "transparent",
+                        border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", fontWeight: "bold", color: "#fff", cursor: "pointer", opacity: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? 1 : 0.4
+                      }}
+                      title="未定"
+                    >未</button>
+                  </div>
+                </div>
+              )}
+
               <div className={styles.calendarActions}>
                 <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={buildScheduleWithAI}>
                   <Sparkles size={14} /> AIスケジュール構築
