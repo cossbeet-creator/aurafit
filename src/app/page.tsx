@@ -1445,10 +1445,15 @@ ${getUserProfileContext()}
             )}
 
             <div className={styles.workoutHeader} style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                   <div className={styles.workoutTitle}>
                     {selectedDateStr === formatDate(new Date()) ? "🎯 今日のトレーニング" : `📅 ${selectedDateStr} の予定`}
+                    {currentWorkoutName && (
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginLeft: "8px", fontWeight: "500" }}>
+                        ({currentWorkoutName})
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: "6px" }}>
@@ -1464,7 +1469,6 @@ ${getUserProfileContext()}
                   )}
                 </div>
               </div>
-              {currentWorkoutName && <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "2px" }}>- {currentWorkoutName}</div>}
             </div>
 
             {/* AI体調調整が適用されている場合のメッセージ */}
