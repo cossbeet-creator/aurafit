@@ -1311,16 +1311,13 @@ ${getUserProfileContext()}
         <>
           {/* カレンダー */}
           <div className={styles.calendarSection}>
-            <div className={styles.sectionTitle} style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "1rem", fontWeight: "700" }}>📅 {currentYear}年 {currentMonth + 1}月</span>
-                <div style={{ display: "flex", gap: "4px" }}>
-                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handlePrevMonth}>◀</button>
-                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleGoToToday}>今月</button>
-                  <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleNextMonth}>▶</button>
-                </div>
+            <div className={styles.sectionTitle}>
+              <span style={{ fontSize: "1rem", fontWeight: "700" }}>📅 {currentYear}年 {currentMonth + 1}月</span>
+              <div style={{ display: "flex", gap: "4px" }}>
+                <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handlePrevMonth}>◀</button>
+                <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleGoToToday}>今月</button>
+                <button className={styles.btnSecondary} style={{ padding: "4px 8px", fontSize: "0.75rem", flex: "none" }} onClick={handleNextMonth}>▶</button>
               </div>
-              <span className={styles.helperText}>タップ：日付選択 / ダブルタップ：行ける日（👍）トグル</span>
             </div>
             
             <div className={styles.calendarGrid}>
@@ -1363,13 +1360,6 @@ ${getUserProfileContext()}
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ display: "flex", gap: "10px", justifyContent: "center", fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-default)" }}></span> 未</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-go)" }}></span> 👌</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-no)" }}></span> ❌</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-maybe)" }}></span> ❓</span>
-              </div>
-
               {selectedDateStr && (
                 <div style={{ 
                   display: "flex", 
@@ -1460,43 +1450,6 @@ ${getUserProfileContext()}
                   <div className={styles.workoutTitle}>
                     {selectedDateStr === formatDate(new Date()) ? "🎯 今日のトレーニング" : `📅 ${selectedDateStr} の予定`}
                   </div>
-                  {/* コンパクト絵文字ステータスバー */}
-                  {!isWorkoutCompleted && (
-                    <div style={{ display: "flex", gap: "4px", background: "rgba(255,255,255,0.03)", padding: "2px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                      <button 
-                        onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_GO")}
-                        style={{
-                          background: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "var(--status-go)" : "transparent",
-                          border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "CONFIRMED_GO" ? 1 : 0.4
-                        }}
-                        title="👌 行ける"
-                      >👌</button>
-                      <button 
-                        onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_NO")}
-                        style={{
-                          background: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "var(--status-no)" : "transparent",
-                          border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "CONFIRMED_NO" ? 1 : 0.4
-                        }}
-                        title="❌ オフ (スライド)"
-                      >❌</button>
-                      <button 
-                        onClick={() => setSpecificDateState(selectedDateStr, "MAYBE")}
-                        style={{
-                          background: dateStates[selectedDateStr] === "MAYBE" ? "var(--status-maybe)" : "transparent",
-                          border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "MAYBE" ? 1 : 0.4
-                        }}
-                        title="微妙"
-                      >❓</button>
-                      <button 
-                        onClick={() => setSpecificDateState(selectedDateStr, "DEFAULT")}
-                        style={{
-                          background: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "rgba(255,255,255,0.15)" : "transparent",
-                          border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", fontWeight: "bold", color: "#fff", cursor: "pointer", opacity: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? 1 : 0.4
-                        }}
-                        title="未定"
-                      >未</button>
-                    </div>
-                  )}
                 </div>
                 <div style={{ display: "flex", gap: "6px" }}>
                   {currentWorkoutName && !isWorkoutCompleted && (
