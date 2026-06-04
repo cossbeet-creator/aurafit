@@ -221,18 +221,63 @@ export default function Home() {
         setInputApiKey(savedKey);
         setShowKeyWarning(false);
       }
-      if (savedMenus) {
-        loadedMenus = JSON.parse(savedMenus);
-        setMenus(loadedMenus);
+      
+      try {
+        if (savedMenus) {
+          loadedMenus = JSON.parse(savedMenus);
+          setMenus(loadedMenus);
+        }
+      } catch (e) {
+        console.error("Failed to parse savedMenus, resetting...", e);
+        localStorage.removeItem("fitrum_menus");
       }
-      setEditableMenus(JSON.parse(JSON.stringify(loadedMenus)));
+      
+      try {
+        setEditableMenus(JSON.parse(JSON.stringify(loadedMenus)));
+      } catch (e) {
+        console.error("Failed to clone loadedMenus", e);
+        setEditableMenus(JSON.parse(JSON.stringify(INITIAL_MENUS)));
+      }
 
-      if (savedSchedule) setSchedule(JSON.parse(savedSchedule));
-      if (savedDateStates) setDateStates(JSON.parse(savedDateStates));
-      if (savedStreak) setStreak(parseInt(savedStreak, 10));
-      if (savedProfile) setUserProfile(JSON.parse(savedProfile));
-      if (savedChatHistory) setBuilderChatHistory(JSON.parse(savedChatHistory));
-      if (savedMenuHistory) setMenuHistory(JSON.parse(savedMenuHistory));
+      try {
+        if (savedSchedule) setSchedule(JSON.parse(savedSchedule));
+      } catch (e) {
+        console.error("Failed to parse savedSchedule, resetting...", e);
+        localStorage.removeItem("fitrum_schedule");
+      }
+
+      try {
+        if (savedDateStates) setDateStates(JSON.parse(savedDateStates));
+      } catch (e) {
+        console.error("Failed to parse savedDateStates, resetting...", e);
+        localStorage.removeItem("fitrum_date_states");
+      }
+
+      if (savedStreak) {
+        const val = parseInt(savedStreak, 10);
+        if (!isNaN(val)) setStreak(val);
+      }
+
+      try {
+        if (savedProfile) setUserProfile(JSON.parse(savedProfile));
+      } catch (e) {
+        console.error("Failed to parse savedProfile, resetting...", e);
+        localStorage.removeItem("fitrum_user_profile");
+      }
+
+      try {
+        if (savedChatHistory) setBuilderChatHistory(JSON.parse(savedChatHistory));
+      } catch (e) {
+        console.error("Failed to parse savedChatHistory, resetting...", e);
+        localStorage.removeItem("fitrum_builder_chat_history");
+      }
+
+      try {
+        if (savedMenuHistory) setMenuHistory(JSON.parse(savedMenuHistory));
+      } catch (e) {
+        console.error("Failed to parse savedMenuHistory, resetting...", e);
+        localStorage.removeItem("fitrum_menu_history");
+      }
 
       const today = new Date();
       setSelectedDateStr(formatDate(today));
@@ -676,6 +721,12 @@ ${getUserProfileContext()}
 
   // 5. トレーニング完了とワンストップ重量更新
   const completeWorkout = async () => {
+    const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
+    if (isSelectedDateCompleted) {
+      alert("この日のトレーニングはすでに完了しているため、変更できません。");
+      return;
+    }
+
     const hasAnyCompleted = exerciseRecords.some(ex => ex.sets.some(s => s.completed));
     if (!hasAnyCompleted) {
       alert("少なくとも1セット以上完了のチェックを入れてください。");
@@ -856,6 +907,12 @@ ${JSON.stringify(exerciseRecords, null, 2)}
   // その日限りの AI 体調調整 (オートレギュレーション) ロジック
   // -------------------------------------------------------------
   const applyAIWorkoutAdjustment = async () => {
+    const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
+    if (isSelectedDateCompleted) {
+      alert("この日のトレーニングはすでに完了しているため、変更できません。");
+      return;
+    }
+
     if (!apiKey) {
       alert("AI調整にはAPIキーの設定が必要です。");
       return;
@@ -1188,6 +1245,12 @@ ${JSON.stringify(menus, null, 2)}
 
   // 代替種目の提案をリクエスト
   const requestAlternative = async (exerciseName: string, index: number) => {
+    const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
+    if (isSelectedDateCompleted) {
+      alert("この日のトレーニングはすでに完了しているため、変更できません。");
+      return;
+    }
+
     setLoading(true);
     try {
       const ai = getAiInstance();
@@ -1251,6 +1314,12 @@ ${getUserProfileContext()}
 
   // 代替種目の適用
   const selectAlternative = (altName: string, altWeight: number, altReps: number, altSets: number) => {
+    const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
+    if (isSelectedDateCompleted) {
+      alert("この日のトレーニングはすでに完了しているため、変更できません。");
+      return;
+    }
+
     if (!alternativeRequest || !currentWorkoutName) return;
     
     const pureWorkoutName = currentWorkoutName.replace(" (実施済み)", "").split(" ")[0];
