@@ -1590,6 +1590,9 @@ ${getUserProfileContext()}
                 <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={() => buildScheduleWithAI()}>
                   <Sparkles size={14} /> AIスケジュール構築
                 </button>
+                <p style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "4px", textAlign: "center", lineHeight: "1.3" }}>
+                  ※カレンダー上で「👌行ける」「❓微妙」の日を設定した状態で実行してください。
+                </p>
               </div>
             </div>
           </div>
