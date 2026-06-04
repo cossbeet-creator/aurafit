@@ -180,6 +180,7 @@ export default function Home() {
   const [alternativesList, setAlternativesList] = useState<any[]>([]);
   
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [isEditingPast, setIsEditingPast] = useState(false);
   
   // --- Tab 2: AIメニュー構築用の状態 ---
   const [aiRequestText, setAiRequestText] = useState("");
@@ -360,6 +361,33 @@ export default function Home() {
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+
+  // ストリーク（連続記録）を今日から過去に向かって動的に再計算するヘルパー
+  const recalculateStreak = (targetSchedule: ScheduleItem[], targetDateStates: DateStates = dateStates) => {
+    let currentStreak = 0;
+    const today = new Date();
+    
+    // 今日から過去365日間を走査
+    for (let i = 0; i < 365; i++) {
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() - i);
+      const dateStr = formatDate(targetDate);
+      
+      const item = targetSchedule.find(s => s.date === dateStr);
+      if (item && item.completed) {
+        currentStreak++;
+      } else {
+        const state = targetDateStates[dateStr] || "DEFAULT";
+        const hasUncompletedWorkout = item && item.workoutName && !item.completed;
+        const isMissedGoDay = state === "CONFIRMED_GO" && (!item || !item.completed);
+
+        if (hasUncompletedWorkout || isMissedGoDay) {
+          break;
+        }
+      }
+    }
+    return currentStreak;
   };
 
   // Undo用バックアップ作成
@@ -646,6 +674,11 @@ ${getUserProfileContext()}
     }
   };
 
+  // 日付の変更時に過去編集モードを自動的に解除する
+  useEffect(() => {
+    setIsEditingPast(false);
+  }, [selectedDateStr]);
+
   // 4. 今日のワークアウト記録の初期化
   useEffect(() => {
     if (!selectedDateStr) return;
@@ -720,7 +753,7 @@ ${getUserProfileContext()}
   // 5. トレーニング完了とワンストップ重量更新
   const completeWorkout = async () => {
     const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
-    if (isSelectedDateCompleted) {
+    if (isSelectedDateCompleted && !isEditingPast) {
       alert("この日のトレーニングはすでに完了しているため、変更できません。");
       return;
     }
@@ -728,6 +761,47 @@ ${getUserProfileContext()}
     const hasAnyCompleted = exerciseRecords.some(ex => ex.sets.some(s => s.completed));
     if (!hasAnyCompleted) {
       alert("少なくとも1セット以上完了のチェックを入れてください。");
+      return;
+    }
+
+    const todayStr = formatDate(new Date());
+    const isPastDate = selectedDateStr < todayStr;
+    
+    if (isPastDate) {
+      // 過去日付の場合はAIプロンプトをスキップして直接完了保存
+      setLoading(true);
+      setTimeout(() => {
+        try {
+          const updatedSchedule = schedule.map(item => {
+            if (item.date === selectedDateStr) {
+              return { 
+                ...item, 
+                completed: true,
+                completedExercises: JSON.parse(JSON.stringify(exerciseRecords))
+              };
+            }
+            return item;
+          });
+          setSchedule(updatedSchedule);
+          saveToLocalStorage("fitrum_schedule", updatedSchedule);
+
+          // 過去実績変更による Streak の再計算と適用
+          const newStreak = recalculateStreak(updatedSchedule, dateStates);
+          setStreak(newStreak);
+          saveToLocalStorage("fitrum_streak", newStreak);
+
+          setIsEditingPast(false);
+          setLoading(false);
+          alert(`過去の実績として登録・保存しました！\n連続記録: 🔥 ${newStreak}日`);
+
+          // 未来の予定の自動再構築 (バトンローテーションの更新に対応)
+          buildScheduleWithAI(menus, updatedSchedule);
+        } catch (e) {
+          console.error(e);
+          setLoading(false);
+          alert("過去実績の保存中にエラーが発生しました。");
+        }
+      }, 300);
       return;
     }
 
@@ -843,7 +917,101 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     buildScheduleWithAI(finalMenus, updatedSchedule);
   };
 
+  // 当日限定：種目の新規追加
+  const addManualExercise = () => {
+    const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
+    if (isSelectedDateCompleted && !isEditingPast) {
+      alert("この日のトレーニングはすでに完了しているため、変更できません。");
+      return;
+    }
 
+    const newEx = {
+      name: "新しい種目",
+      targetWeight: 10,
+      targetReps: 10,
+      targetSets: 3,
+      sets: [
+        { weight: 10, reps: 10, completed: false },
+        { weight: 10, reps: 10, completed: false },
+        { weight: 10, reps: 10, completed: false }
+      ]
+    };
+
+    const updatedRecords = [...exerciseRecords, newEx];
+    setExerciseRecords(updatedRecords);
+
+    // schedule の customExercises も同期更新
+    updateScheduleCustomExercises(updatedRecords);
+  };
+
+  // 当日限定：種目の削除
+  const deleteManualExercise = (index: number) => {
+    const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
+    if (isSelectedDateCompleted && !isEditingPast) {
+      alert("この日のトレーニングはすでに完了しているため、変更できません。");
+      return;
+    }
+
+    const updatedRecords = exerciseRecords.filter((_, idx) => idx !== index);
+    setExerciseRecords(updatedRecords);
+
+    // schedule の customExercises も同期更新
+    updateScheduleCustomExercises(updatedRecords);
+  };
+
+  // 当日限定：種目名の直接編集
+  const handleExerciseNameChange = (index: number, newName: string) => {
+    const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
+    if (isSelectedDateCompleted && !isEditingPast) {
+      return;
+    }
+
+    const updatedRecords = [...exerciseRecords];
+    updatedRecords[index].name = newName;
+    setExerciseRecords(updatedRecords);
+
+    // schedule の customExercises も同期更新
+    updateScheduleCustomExercises(updatedRecords);
+  };
+
+  // schedule 内の customExercises を同期更新しローカルストレージへ保存する共通ヘルパー
+  const updateScheduleCustomExercises = (records: ExerciseRecord[]) => {
+    let hasDateInSchedule = schedule.some(item => item.date === selectedDateStr);
+    
+    const updatedSchedule = hasDateInSchedule 
+      ? schedule.map(item => {
+          if (item.date === selectedDateStr) {
+            return {
+              ...item,
+              customExercises: records.map(r => ({
+                name: r.name,
+                weight: r.targetWeight,
+                reps: r.targetReps,
+                sets: r.targetSets
+              }))
+            };
+          }
+          return item;
+        })
+      : [
+          ...schedule,
+          {
+            date: selectedDateStr,
+            workoutName: "Custom",
+            isTemp: true,
+            completed: false,
+            customExercises: records.map(r => ({
+              name: r.name,
+              weight: r.targetWeight,
+              reps: r.targetReps,
+              sets: r.targetSets
+            }))
+          }
+        ];
+
+    setSchedule(updatedSchedule);
+    saveToLocalStorage("fitrum_schedule", updatedSchedule);
+  };
 
   // -------------------------------------------------------------
   // その日限りの AI 体調調整 (オートレギュレーション) ロジック
@@ -1625,16 +1793,53 @@ ${getUserProfileContext()}
                 {exerciseRecords.map((ex, exIdx) => (
                   <div key={exIdx} className={styles.exerciseCard}>
                     <div className={styles.exerciseHeader}>
-                      <span className={styles.exerciseName}>{ex.name}</span>
+                      {(!isWorkoutCompleted || isEditingPast) ? (
+                        <input 
+                          type="text" 
+                          className={styles.exerciseNameInput} 
+                          value={ex.name} 
+                          onChange={(e) => handleExerciseNameChange(exIdx, e.target.value)} 
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            borderBottom: "1px dashed rgba(255,255,255,0.3)",
+                            color: "var(--text-main)",
+                            fontSize: "1rem",
+                            fontWeight: "700",
+                            padding: "2px 4px",
+                            width: "60%"
+                          }}
+                        />
+                      ) : (
+                        <span className={styles.exerciseName}>{ex.name}</span>
+                      )}
                       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                         <span className={styles.targetInfo}>{ex.targetWeight}kg × {ex.targetReps}回</span>
-                        {!isWorkoutCompleted && (
+                        {!isWorkoutCompleted && !isEditingPast && (
                           <button 
                             className={styles.btnSecondary} 
                             style={{ padding: "4px 8px", fontSize: "0.7rem", height: "24px" }}
                             onClick={() => requestAlternative(ex.name, exIdx)}
                           >
                             代わり
+                          </button>
+                        )}
+                        {(!isWorkoutCompleted || isEditingPast) && (
+                          <button 
+                            className={styles.deleteExBtn} 
+                            style={{ 
+                              background: "transparent", 
+                              border: "none", 
+                              color: "var(--status-no)", 
+                              cursor: "pointer", 
+                              display: "flex", 
+                              alignItems: "center", 
+                              padding: "4px" 
+                            }}
+                            onClick={() => deleteManualExercise(exIdx)}
+                            title="種目を削除"
+                          >
+                            <Trash2 size={14} />
                           </button>
                         )}
                       </div>
@@ -1651,7 +1856,7 @@ ${getUserProfileContext()}
                                 type="number" 
                                 className={styles.numInput} 
                                 value={set.weight} 
-                                disabled={isWorkoutCompleted}
+                                disabled={isWorkoutCompleted && !isEditingPast}
                                 style={{ width: "50px" }}
                                 onChange={(e) => handleSetChange(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)} 
                               />
@@ -1664,7 +1869,7 @@ ${getUserProfileContext()}
                                 type="number" 
                                 className={styles.numInput} 
                                 value={set.reps} 
-                                disabled={isWorkoutCompleted}
+                                disabled={isWorkoutCompleted && !isEditingPast}
                                 style={{ width: "40px" }}
                                 onChange={(e) => handleSetChange(exIdx, setIdx, "reps", parseInt(e.target.value, 10) || 0)} 
                               />
@@ -1674,9 +1879,9 @@ ${getUserProfileContext()}
                             {/* チェック */}
                             <button 
                               className={`${styles.checkBtn} ${set.completed ? styles.checkBtnActive : ""}`}
-                              disabled={isWorkoutCompleted}
+                              disabled={isWorkoutCompleted && !isEditingPast}
                               onClick={() => toggleSetComplete(exIdx, setIdx)}
-                              style={isWorkoutCompleted ? { cursor: "default" } : {}}
+                              style={isWorkoutCompleted && !isEditingPast ? { cursor: "default" } : {}}
                             >
                               <Check size={14} />
                             </button>
@@ -1686,8 +1891,18 @@ ${getUserProfileContext()}
                     </div>
                   </div>
                 ))}
+
+                {(!isWorkoutCompleted || isEditingPast) && (
+                  <button 
+                    className={styles.btnSecondary} 
+                    style={{ width: "100%", marginTop: "8px", marginBottom: "16px" }} 
+                    onClick={addManualExercise}
+                  >
+                    <Plus size={14} style={{ marginRight: "4px" }} /> 種目を追加
+                  </button>
+                )}
                 
-                {isWorkoutCompleted ? (
+                {isWorkoutCompleted && !isEditingPast ? (
                   <div style={{
                     display: "flex",
                     flexDirection: "column",
@@ -1703,13 +1918,20 @@ ${getUserProfileContext()}
                     <span style={{ color: "var(--status-go)", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}>
                       <Check size={16} /> この日のトレーニング実績は保存済みです
                     </span>
-                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                      過去の実績データは読み取り専用で保護されています
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center" }}>
+                      実績データは保護されています。修正が必要な場合は下記のボタンからロックを解除してください。
                     </span>
+                    <button 
+                      className={styles.btnSecondary} 
+                      style={{ marginTop: "4px", padding: "6px 12px", fontSize: "0.75rem" }} 
+                      onClick={() => setIsEditingPast(true)}
+                    >
+                      実績を修正する (ロック解除)
+                    </button>
                   </div>
                 ) : (
                   <button className={`${styles.btnPrimary} ${styles.submitBtn}`} onClick={completeWorkout}>
-                    <Zap size={16} /> 本日のトレーニングを完了
+                    <Zap size={16} /> {selectedDateStr < formatDate(new Date()) ? "過去の記録を保存" : "本日のトレーニングを完了"}
                   </button>
                 )}
               </div>
@@ -1718,7 +1940,18 @@ ${getUserProfileContext()}
                 {currentWorkoutName.includes("(実施済み)") ? (
                   <p style={{ color: "var(--status-go)" }}>✨ この日のトレーニングは完了しています！</p>
                 ) : (
-                  <p>本日はトレーニング予定はありません。<br/>休養を取るか、カレンダーから日付を選択してください。</p>
+                  <>
+                    <p>本日はトレーニング予定はありません。<br/>休養を取るか、カレンダーから日付を選択してください。</p>
+                    {selectedDateStr < formatDate(new Date()) && (
+                      <button 
+                        className={styles.btnSecondary} 
+                        style={{ marginTop: "12px" }}
+                        onClick={addManualExercise}
+                      >
+                        <Plus size={14} style={{ marginRight: "4px" }} /> この日の実績を登録する
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}
