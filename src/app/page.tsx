@@ -682,6 +682,9 @@ ${getUserProfileContext()}
   // 4. 今日のワークアウト記録の初期化
   useEffect(() => {
     if (!selectedDateStr) return;
+    // 過去編集モード中は、schedule変更による再初期化をスキップする
+    // （completeWorkout保存直後にuseEffectが再発火して修正データが消えるのを防止）
+    if (isEditingPast) return;
 
     const scheduled = schedule.find(item => item.date === selectedDateStr);
     if (scheduled && !scheduled.completed) {
@@ -730,7 +733,7 @@ ${getUserProfileContext()}
       setExerciseRecords([]);
       setActiveAdjustmentReason("");
     }
-  }, [selectedDateStr, schedule, menus]);
+  }, [selectedDateStr, schedule, menus, isEditingPast]);
 
   // 実績入力値の変更ハンドラー
   const handleSetChange = (exIndex: number, setIndex: number, field: "weight" | "reps", value: number) => {
@@ -1937,8 +1940,19 @@ ${getUserProfileContext()}
               </div>
             ) : (
               <div className={styles.noWorkoutText}>
-                {currentWorkoutName.includes("(実施済み)") ? (
+                {currentWorkoutName.includes("(実施済み)") && !isEditingPast ? (
                   <p style={{ color: "var(--status-go)" }}>✨ この日のトレーニングは完了しています！</p>
+                ) : isEditingPast ? (
+                  <>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>種目がすべて削除されています。種目を追加するか、日付を変更してください。</p>
+                    <button 
+                      className={styles.btnSecondary} 
+                      style={{ marginTop: "12px" }}
+                      onClick={addManualExercise}
+                    >
+                      <Plus size={14} style={{ marginRight: "4px" }} /> 種目を追加
+                    </button>
+                  </>
                 ) : (
                   <>
                     <p>本日はトレーニング予定はありません。<br/>休養を取るか、カレンダーから日付を選択してください。</p>
