@@ -179,6 +179,8 @@ export default function Home() {
   const [alternativeRequest, setAlternativeRequest] = useState<{ exerciseName: string; index: number } | null>(null);
   const [alternativesList, setAlternativesList] = useState<any[]>([]);
   
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  
   // --- Tab 2: AIメニュー構築用の状態 ---
   const [aiRequestText, setAiRequestText] = useState("");
   const [builderAction, setBuilderAction] = useState<"create" | "improve" | "import" | "alternative">("improve");
@@ -1384,6 +1386,24 @@ ${getUserProfileContext()}
       <header className={styles.header}>
         <h1 className={styles.title}>Fitrum</h1>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button 
+            onClick={() => setShowHelpModal(true)} 
+            style={{ 
+              background: "transparent", 
+              border: "none", 
+              color: "var(--text-muted)", 
+              cursor: "pointer", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center",
+              padding: "6px",
+              borderRadius: "50%",
+              transition: "all 0.2s"
+            }}
+            title="使い方ヘルプ"
+          >
+            <HelpCircle size={20} />
+          </button>
           <div className={styles.statCard} style={{ padding: "6px 12px" }}>
             <span className={styles.statValue}>🔥 {streak}</span>
             <span className={styles.statLabel} style={{ marginLeft: "4px" }}>連続</span>
@@ -2259,6 +2279,81 @@ ${getUserProfileContext()}
                 AI調整メニューを適用
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ヘルプモーダル */}
+      {showHelpModal && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalContent} style={{ maxWidth: "420px", textAlign: "left" }}>
+            <h3 className={styles.feedbackTitle} style={{ fontSize: "1.1rem", display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "10px", marginBottom: "16px" }}>
+              <HelpCircle size={18} style={{ color: "var(--color-primary)" }} /> Fitrum 使い方ガイド
+            </h3>
+            
+            <div style={{ maxHeight: "55vh", overflowY: "auto", paddingRight: "6px", display: "flex", flexDirection: "column", gap: "14px", fontSize: "0.75rem", lineHeight: "1.5", color: "var(--text-main)" }}>
+              
+              <div>
+                <span style={{ fontWeight: "700", color: "var(--color-primary)", display: "block", marginBottom: "4px", fontSize: "0.8rem" }}>
+                  1. 【準備】メニューとAIカルテの登録
+                </span>
+                <p style={{ color: "var(--text-muted)" }}>
+                  「メニュー構築」タブ (Tab 2) にて、AIを使って基本メニューを作成するか、お手持ちのメニューを貼り付けます。<br />
+                  「過去取込」を選ぶと、目標やケガの制限を手動調整できる <strong>AIカルテ</strong> が表示されます。「週の目標頻度」設定は完全廃止され、AIがカレンダーから直接判断します。
+                </p>
+              </div>
+
+              <div>
+                <span style={{ fontWeight: "700", color: "var(--color-primary)", display: "block", marginBottom: "4px", fontSize: "0.8rem" }}>
+                  2. 【計画】行ける日の設定 ＆ AI自動配置
+                </span>
+                <p style={{ color: "var(--text-muted)" }}>
+                  カレンダーの日付をダブルタップ（またはタップして下の👌❌❓ボタンを選択）し、ジムに行く予定の日を指定します。<br />
+                  カレンダー下の <strong>「AIスケジュール構築」</strong> ボタンを押すと、AIが予定を自動配置します。<br />
+                  <strong>・👌が週2回以下</strong> ➔ 全身を鍛える「全身法」メニューを動的にブレンド作成。<br />
+                  <strong>・👌が週3回以上</strong> ➔ 基本のローテーション順序（A➔B➔C...）を崩さずに順次配置。
+                </p>
+              </div>
+
+              <div>
+                <span style={{ fontWeight: "700", color: "var(--color-primary)", display: "block", marginBottom: "4px", fontSize: "0.8rem" }}>
+                  3. 【実行】トレーニング記録 ＆ レベルアップ
+                </span>
+                <p style={{ color: "var(--text-muted)" }}>
+                  ジムに着いたら、予定種目の各セット重量・回数を記入し、完了したセットの <strong>チェック（✔）</strong> を入れます。<br />
+                  すべて終えたら <strong>「本日のトレーニングを完了」</strong> ボタンを押します。AIが今日の実績を分析し、目標クリア状況に応じて次回の目標（重量・回数）の自動更新を提案します。
+                </p>
+              </div>
+
+              <div>
+                <span style={{ fontWeight: "700", color: "var(--color-primary)", display: "block", marginBottom: "4px", fontSize: "0.8rem" }}>
+                  4. 【連携】変更時の自動スケジュール再構築
+                </span>
+                <p style={{ color: "var(--text-muted)" }}>
+                  <strong>・全ルーティン伝播:</strong> 完了した種目の重量更新は、全ルーティン（A, B, C...）の同種目へ自動で伝播します。<br />
+                  <strong>・自動再構築:</strong> 基本メニューの手動変更時や、重量更新適用時、カレンダーの👌/❌を変更した際は、<strong>未来の予定（未完了）が最新の設定で自動再構築</strong>されます。
+                </p>
+              </div>
+
+              <div>
+                <span style={{ fontWeight: "700", color: "var(--color-primary)", display: "block", marginBottom: "4px", fontSize: "0.8rem" }}>
+                  5. 【調整】その日限りのメニュー調整
+                </span>
+                <p style={{ color: "var(--text-muted)" }}>
+                  <strong>・代替種目 (代わり):</strong> 混雑や痛みがある場合、ボタンからAIが同等強度に換算した代替種目を提案します。この差し替えは当日限り有効で、基本メニューは汚されません。<br />
+                  <strong>・AI体調調整:</strong> 寝不足や疲労度、痛みに合わせて、今日だけのメニュー（セット減など）をAIが自動調整します。
+                </p>
+              </div>
+
+            </div>
+
+            <button 
+              className={styles.btnPrimary} 
+              style={{ width: "100%", marginTop: "16px" }} 
+              onClick={() => setShowHelpModal(false)}
+            >
+              閉じる
+            </button>
           </div>
         </div>
       )}
