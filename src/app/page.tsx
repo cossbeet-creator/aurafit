@@ -386,20 +386,13 @@ export default function Home() {
   const setSpecificDateState = (dateStr: string, next: DateState) => {
     const newStates = { ...dateStates, [dateStr]: next };
     
-    // 「行けない日 (CONFIRMED_NO)」に切り替わった場合、もし未完了の予定があれば自動スライド
-    if (next === "CONFIRMED_NO") {
-      const scheduled = schedule.find(item => item.date === dateStr);
-      if (scheduled && scheduled.workoutName && !scheduled.completed) {
-        backupScheduleForUndo(dateStates);
-        setDateStates(newStates);
-        saveToLocalStorage("fitrum_date_states", newStates);
-        slideWorkout(dateStr);
-        return;
-      }
-    }
-
     setDateStates(newStates);
     saveToLocalStorage("fitrum_date_states", newStates);
+
+    // 日程変更後に自動でAIスケジュール構築を再実行
+    if (apiKey) {
+      buildScheduleWithAI(menus, schedule, newStates);
+    }
   };
 
   // 日付状態トグル
@@ -614,7 +607,8 @@ ${getUserProfileContext()}
         const filteredAiProposal = aiProposal
           .filter(aiItem => {
             if (!aiItem.date || isNaN(Date.parse(aiItem.date))) return false;
-            const alreadyCompleted = targetSchedule.some(item => item.date === aiItem.date && item.completed);
+            const standardizedDate = formatDate(new Date(aiItem.date));
+            const alreadyCompleted = targetSchedule.some(item => item.date === standardizedDate && item.completed);
             const itemDate = new Date(aiItem.date);
             const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
             const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -622,6 +616,7 @@ ${getUserProfileContext()}
             return !alreadyCompleted;
           })
           .map(aiItem => {
+            const standardizedDate = formatDate(new Date(aiItem.date));
             // ハルシネーション（未登録の種目）を防ぐため、登録済みの基本種目名と完全一致するもののみにフィルタ
             const validatedExercises = aiItem.customExercises
               ? aiItem.customExercises.filter((ex: any) => allBaseExerciseNames.includes(ex.name))
@@ -629,6 +624,7 @@ ${getUserProfileContext()}
 
             return {
               ...aiItem,
+              date: standardizedDate,
               customExercises: validatedExercises && validatedExercises.length > 0 ? validatedExercises : undefined
             };
           });
@@ -845,63 +841,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     buildScheduleWithAI(finalMenus, updatedSchedule);
   };
 
-  // -------------------------------------------------------------
-  // 玉突きスライド（順送り）コアロジック
-  // -------------------------------------------------------------
-  const slideWorkout = (targetDateStr: string) => {
-    const todayIndex = schedule.findIndex(item => item.date === targetDateStr);
-    if (todayIndex === -1) return;
 
-    const currentItem = schedule[todayIndex];
-    if (!currentItem.workoutName || currentItem.completed) {
-      return;
-    }
-
-    // 予定が入っている日をターゲット日以降で全抽出
-    const futureScheduledDays = schedule
-      .map((item, index) => ({ ...item, index }))
-      .filter(item => item.index >= todayIndex && !item.completed);
-
-    if (futureScheduledDays.length < 2) {
-      alert("スライド先となる未来のトレーニング日程がありません。カレンダーで日付を増やすか、AIスケジュール構築を行ってください。");
-      return;
-    }
-
-    const newSchedule = [...schedule];
-    for (let i = futureScheduledDays.length - 1; i > 0; i--) {
-      const current = futureScheduledDays[i];
-      const prev = futureScheduledDays[i - 1];
-      newSchedule[current.index].workoutName = prev.workoutName;
-      newSchedule[current.index].isTemp = prev.isTemp;
-      newSchedule[current.index].customExercises = prev.customExercises;
-      newSchedule[current.index].adjustmentReason = prev.adjustmentReason;
-    }
-
-    newSchedule[todayIndex] = {
-      date: targetDateStr,
-      workoutName: "",
-      isTemp: false,
-      completed: false
-    };
-
-    setSchedule(newSchedule);
-    saveToLocalStorage("fitrum_schedule", newSchedule);
-  };
-
-  // スライドボタン押下時のハンドラー
-  const slideWorkoutToNextAvailable = () => {
-    const scheduled = schedule.find(item => item.date === selectedDateStr);
-    if (!scheduled || !scheduled.workoutName) {
-      alert("この日の予定がありません。スライドできません。");
-      return;
-    }
-    if (scheduled.completed) {
-      alert("このワークアウトはすでに実施済みです。");
-      return;
-    }
-    backupScheduleForUndo(dateStates);
-    slideWorkout(selectedDateStr);
-  };
 
   // -------------------------------------------------------------
   // その日限りの AI 体調調整 (オートレギュレーション) ロジック
@@ -1338,22 +1278,31 @@ ${getUserProfileContext()}
     };
     setExerciseRecords(updatedRecords);
 
-    const updatedMenus = { ...menus };
-    updatedMenus[pureWorkoutName] = updatedMenus[pureWorkoutName].map((ex) => {
-      if (ex.name === alternativeRequest.exerciseName) {
+    const updatedSchedule = schedule.map(item => {
+      if (item.date === selectedDateStr) {
+        const originalExercises = item.customExercises || menus[item.workoutName] || [];
+        const newExercises = originalExercises.map((ex, idx) => {
+          if (idx === alternativeRequest.index) {
+            return {
+              name: altName,
+              weight: altWeight,
+              reps: altReps,
+              sets: altSets
+            };
+          }
+          return ex;
+        });
+
         return {
-          name: altName,
-          weight: altWeight,
-          reps: altReps,
-          sets: altSets
+          ...item,
+          customExercises: newExercises
         };
       }
-      return ex;
+      return item;
     });
 
-    setMenus(updatedMenus);
-    setEditableMenus(JSON.parse(JSON.stringify(updatedMenus)));
-    saveToLocalStorage("fitrum_menus", updatedMenus);
+    setSchedule(updatedSchedule);
+    saveToLocalStorage("fitrum_schedule", updatedSchedule);
 
     setAlternativeRequest(null);
     setAlternativesList([]);
@@ -1599,28 +1548,7 @@ ${getUserProfileContext()}
 
           {/* 今日のやること */}
           <div className={styles.workoutSection} style={{ marginBottom: "20px", flex: "none" }}>
-            {/* Undoバナー */}
-            {showUndoBanner && (
-              <div style={{ 
-                background: "rgba(255, 165, 0, 0.1)", 
-                border: "1px solid var(--status-maybe)", 
-                borderRadius: "10px", 
-                padding: "10px 14px", 
-                marginBottom: "16px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}>
-                <span style={{ fontSize: "0.75rem", color: "var(--text-main)" }}>⚠️ スケジュールをスライドしました</span>
-                <button 
-                  className={styles.btnPrimary} 
-                  style={{ padding: "4px 10px", fontSize: "0.7rem", background: "var(--status-maybe)", color: "#000", border: "none" }}
-                  onClick={undoLastSlide}
-                >
-                  元に戻す (Undo)
-                </button>
-              </div>
-            )}
+
 
             <div className={styles.workoutHeader} style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
