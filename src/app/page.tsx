@@ -372,15 +372,13 @@ export default function Home() {
     setSpecificDateState(dateStr, next);
   };
 
-  // カレンダー日付クリックハンドラー（シングルタップで選択、ダブルタップで行ける日をトグル）
+  // カレンダー日付クリックハンドラー（シングルタップで選択、ダブルタップで全ステータス循環トグル）
   const handleDayClick = (dateStr: string) => {
     const now = Date.now();
     const isDoubleTap = lastTapInfo.dateStr === dateStr && (now - lastTapInfo.time) < 300;
 
     if (isDoubleTap) {
-      const currentState = dateStates[dateStr] || "DEFAULT";
-      const nextState = currentState === "CONFIRMED_GO" ? "DEFAULT" : "CONFIRMED_GO";
-      setSpecificDateState(dateStr, nextState);
+      toggleDateState(dateStr);
       setLastTapInfo({ dateStr: "", time: 0 });
     } else {
       setSelectedDateStr(dateStr);
@@ -1336,94 +1334,65 @@ ${getUserProfileContext()}
               </div>
             )}
 
-            <div className={styles.workoutHeader}>
-              <div className={styles.workoutTitle}>
-                {selectedDateStr === formatDate(new Date()) ? "🎯 今日のトレーニング" : `📅 ${selectedDateStr} の予定`}
-                {currentWorkoutName && <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginLeft: "8px" }}>- {currentWorkoutName}</span>}
+            <div className={styles.workoutHeader} style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <div className={styles.workoutTitle}>
+                    {selectedDateStr === formatDate(new Date()) ? "🎯 今日のトレーニング" : `📅 ${selectedDateStr} の予定`}
+                  </div>
+                  {/* コンパクト絵文字ステータスバー */}
+                  {!isWorkoutCompleted && (
+                    <div style={{ display: "flex", gap: "4px", background: "rgba(255,255,255,0.03)", padding: "2px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                      <button 
+                        onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_GO")}
+                        style={{
+                          background: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "var(--status-go)" : "transparent",
+                          border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "CONFIRMED_GO" ? 1 : 0.4
+                        }}
+                        title="👌 行ける"
+                      >👌</button>
+                      <button 
+                        onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_NO")}
+                        style={{
+                          background: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "var(--status-no)" : "transparent",
+                          border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "CONFIRMED_NO" ? 1 : 0.4
+                        }}
+                        title="❌ オフ (スライド)"
+                      >❌</button>
+                      <button 
+                        onClick={() => setSpecificDateState(selectedDateStr, "MAYBE")}
+                        style={{
+                          background: dateStates[selectedDateStr] === "MAYBE" ? "var(--status-maybe)" : "transparent",
+                          border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", cursor: "pointer", opacity: dateStates[selectedDateStr] === "MAYBE" ? 1 : 0.4
+                        }}
+                        title="微妙"
+                      >❓</button>
+                      <button 
+                        onClick={() => setSpecificDateState(selectedDateStr, "DEFAULT")}
+                        style={{
+                          background: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "rgba(255,255,255,0.15)" : "transparent",
+                          border: "none", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", fontWeight: "bold", color: "#fff", cursor: "pointer", opacity: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? 1 : 0.4
+                        }}
+                        title="未定"
+                      >未</button>
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {currentWorkoutName && !isWorkoutCompleted && (
+                    <>
+                      <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={() => setShowAdjustModal(true)}>
+                        <Activity size={12} style={{ marginRight: "2px" }} /> AI体調調整
+                      </button>
+                      <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={slideWorkoutToNextAvailable}>
+                        スライド
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div style={{ display: "flex", gap: "6px" }}>
-                {currentWorkoutName && !isWorkoutCompleted && (
-                  <>
-                    <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={() => setShowAdjustModal(true)}>
-                      <Activity size={12} style={{ marginRight: "2px" }} /> AI体調調整
-                    </button>
-                    <button className={styles.btnSecondary} style={{ padding: "6px 10px", fontSize: "0.75rem" }} onClick={slideWorkoutToNextAvailable}>
-                      スライド
-                    </button>
-                  </>
-                )}
-              </div>
+              {currentWorkoutName && <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "2px" }}>- {currentWorkoutName}</div>}
             </div>
-
-            {/* 選択日の予定ステータス変更パネル（スマホ操作性の向上） */}
-            {!isWorkoutCompleted && (
-              <div style={{ 
-                display: "flex", 
-                gap: "6px", 
-                marginTop: "8px", 
-                marginBottom: "16px", 
-                flexWrap: "wrap",
-                background: "rgba(255, 255, 255, 0.02)",
-                padding: "8px",
-                borderRadius: "8px",
-                border: "1px solid rgba(255, 255, 255, 0.05)",
-                alignItems: "center"
-              }}>
-                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginRight: "4px" }}>予定ステータス:</span>
-                <button 
-                  className={styles.btnSecondary} 
-                  style={{ 
-                    padding: "4px 8px", 
-                    fontSize: "0.7rem", 
-                    background: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "var(--status-go)" : "", 
-                    color: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "#000" : "",
-                    border: dateStates[selectedDateStr] === "CONFIRMED_GO" ? "none" : "1px solid rgba(255,255,255,0.1)"
-                  }}
-                  onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_GO")}
-                >
-                  👍 行ける
-                </button>
-                <button 
-                  className={styles.btnSecondary} 
-                  style={{ 
-                    padding: "4px 8px", 
-                    fontSize: "0.7rem", 
-                    background: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "var(--status-no)" : "", 
-                    color: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "#fff" : "",
-                    border: dateStates[selectedDateStr] === "CONFIRMED_NO" ? "none" : "1px solid rgba(255,255,255,0.1)"
-                  }}
-                  onClick={() => setSpecificDateState(selectedDateStr, "CONFIRMED_NO")}
-                >
-                  ☕️ オフにする (スライド)
-                </button>
-                <button 
-                  className={styles.btnSecondary} 
-                  style={{ 
-                    padding: "4px 8px", 
-                    fontSize: "0.7rem", 
-                    background: dateStates[selectedDateStr] === "MAYBE" ? "var(--status-maybe)" : "", 
-                    color: dateStates[selectedDateStr] === "MAYBE" ? "#000" : "",
-                    border: dateStates[selectedDateStr] === "MAYBE" ? "none" : "1px solid rgba(255,255,255,0.1)"
-                  }}
-                  onClick={() => setSpecificDateState(selectedDateStr, "MAYBE")}
-                >
-                  ❓ 微妙
-                </button>
-                <button 
-                  className={styles.btnSecondary} 
-                  style={{ 
-                    padding: "4px 8px", 
-                    fontSize: "0.7rem", 
-                    background: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "rgba(255,255,255,0.1)" : "",
-                    color: !dateStates[selectedDateStr] || dateStates[selectedDateStr] === "DEFAULT" ? "var(--text-main)" : "",
-                    border: "1px solid rgba(255,255,255,0.1)"
-                  }}
-                  onClick={() => setSpecificDateState(selectedDateStr, "DEFAULT")}
-                >
-                  未定
-                </button>
-              </div>
-            )}
 
             {/* AI体調調整が適用されている場合のメッセージ */}
             {activeAdjustmentReason && (
@@ -1630,17 +1599,14 @@ ${getUserProfileContext()}
 
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={{ display: "flex", gap: "10px", justifyContent: "center", fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-default)" }}></span> 未定</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-go)" }}></span> 行ける(確)</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-no)" }}></span> オフ</span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-maybe)" }}></span> 微妙</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-default)" }}></span> 未</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-go)" }}></span> 👌</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-no)" }}></span> ❌</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--status-maybe)" }}></span> ❓</span>
               </div>
 
               <div className={styles.calendarActions}>
-                <button className={styles.btnSecondary} onClick={() => toggleDateState(selectedDateStr)}>
-                  選択日の予定を変更
-                </button>
-                <button className={styles.btnPrimary} onClick={buildScheduleWithAI}>
+                <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={buildScheduleWithAI}>
                   <Sparkles size={14} /> AIスケジュール構築
                 </button>
               </div>
