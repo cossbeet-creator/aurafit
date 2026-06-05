@@ -182,6 +182,7 @@ export default function Home() {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isEditingPast, setIsEditingPast] = useState(false);
   const [scheduleInstruction, setScheduleInstruction] = useState("");
+  const [hasUnsavedDateChanges, setHasUnsavedDateChanges] = useState(false);
   
   // --- Tab 2: AIメニュー構築用の状態 ---
   const [aiRequestText, setAiRequestText] = useState("");
@@ -420,10 +421,8 @@ export default function Home() {
     setDateStates(newStates);
     saveToLocalStorage("fitrum_date_states", newStates);
 
-    // 日程変更後に自動でAIスケジュール構築を再実行
-    if (apiKey) {
-      buildScheduleWithAI(menus, schedule, newStates);
-    }
+    // 自動でのAI再考は行わず、未反映フラグを立てる
+    setHasUnsavedDateChanges(true);
   };
 
   // 日付状態トグル
@@ -671,6 +670,7 @@ ${scheduleInstruction.trim()}
 
         setSchedule(mergedSchedule);
         saveToLocalStorage("fitrum_schedule", mergedSchedule);
+        setHasUnsavedDateChanges(false);
       }
     } catch (err) {
       console.error(err);
@@ -1733,6 +1733,23 @@ ${getUserProfileContext()}
               )}
 
               <div className={styles.calendarActions} style={{ flexDirection: "column", gap: "8px" }}>
+                {hasUnsavedDateChanges && (
+                  <div 
+                    style={{ 
+                      fontSize: "0.7rem", 
+                      color: "#ffd700", 
+                      backgroundColor: "rgba(255, 215, 0, 0.1)", 
+                      border: "1px solid rgba(255, 215, 0, 0.2)", 
+                      borderRadius: "6px", 
+                      padding: "6px 10px", 
+                      textAlign: "center", 
+                      width: "100%",
+                      animation: "pulse 2s infinite" 
+                    }}
+                  >
+                    ⚠️ 日程が変更されました。「AIスケジュール構築」を押して反映してください。
+                  </div>
+                )}
                 <input
                   type="text"
                   className={styles.textInput}
@@ -1741,11 +1758,19 @@ ${getUserProfileContext()}
                   onChange={(e) => setScheduleInstruction(e.target.value)}
                   style={{ fontSize: "0.75rem", padding: "8px 10px", width: "100%" }}
                 />
-                <button className={styles.btnPrimary} style={{ width: "100%" }} onClick={() => buildScheduleWithAI()}>
+                <button 
+                  className={styles.btnPrimary} 
+                  style={{ 
+                    width: "100%",
+                    boxShadow: hasUnsavedDateChanges ? "0 0 12px rgba(255, 215, 0, 0.4)" : "none",
+                    border: hasUnsavedDateChanges ? "1px solid #ffd700" : "none"
+                  }} 
+                  onClick={() => buildScheduleWithAI()}
+                >
                   <Sparkles size={14} /> AIスケジュール構築
                 </button>
                 <p style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "0px", textAlign: "center", lineHeight: "1.3" }}>
-                  ※カレンダー上で「👌行ける」「❓微妙」の日を設定した状態で実行してください。
+                  ※カレンダー上で日程（👌行ける・❌オフ等）を変更した後、このボタンを押してAIにスケジュールを再構築させてください。
                 </p>
               </div>
             </div>
