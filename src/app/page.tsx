@@ -519,6 +519,12 @@ export default function Home() {
       const noDays = Object.keys(targetDateStates)
         .filter(k => targetDateStates[k] === "CONFIRMED_NO" && filterFutureOnly(k));
 
+      if (confirmedDays.length === 0 && maybeDays.length === 0) {
+        alert("カレンダー上で「👌行ける」または「❓微妙」の日を1日以上設定してから実行してください。");
+        setLoading(false);
+        return;
+      }
+
       // 週のインデックスを計算するヘルパー（月曜始まり）
       const getWeekIndex = (dateStr: string, baseDate: Date) => {
         const d = new Date(dateStr);
@@ -625,7 +631,15 @@ ${scheduleInstruction.trim()}
         },
       });
 
-      const data = JSON.parse(response.text || "{}");
+      let data;
+      try {
+        data = JSON.parse(response.text || "{}");
+      } catch (parseErr: any) {
+        console.error("JSON Parse Error. Raw text:", response.text, parseErr);
+        alert(`AIからのデータ解析に失敗しました。\n詳細: ${parseErr.message}\n生データ: ${response.text?.substring(0, 150)}`);
+        setLoading(false);
+        return;
+      }
 
       if (data.schedule) {
         // AI提案の日程と既存の日程を安全にマージする
