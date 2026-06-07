@@ -586,7 +586,7 @@ ${scheduleInstruction.trim()}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.1-flash-lite",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -831,7 +831,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.1-flash-lite",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1064,7 +1064,7 @@ ${JSON.stringify(baseExercises, null, 2)}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.1-flash-lite",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1263,7 +1263,7 @@ ${JSON.stringify(menus, null, 2)}
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.1-flash-lite",
         contents: apiContents,
         config: {
           responseMimeType: "application/json",
@@ -1391,7 +1391,7 @@ ${getUserProfileContext()}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.1-flash-lite",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
