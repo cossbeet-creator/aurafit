@@ -586,7 +586,7 @@ ${scheduleInstruction.trim()}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -651,9 +651,9 @@ ${scheduleInstruction.trim()}
         saveToLocalStorage("fitrum_schedule", mergedSchedule);
         setHasUnsavedDateChanges(false);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("AIスケジュールの構築に失敗しました。キーまたは接続を確認してください。");
+      alert(`AIスケジュールの構築に失敗しました。\n詳細: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
@@ -831,7 +831,7 @@ ${JSON.stringify(exerciseRecords, null, 2)}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -843,9 +843,9 @@ ${JSON.stringify(exerciseRecords, null, 2)}
       setAiFeedback(data.feedback);
       setUpdatedExercisesProposal(data.updatedExercises || []);
       setShowProgressionModal(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("AIフィードバックの取得に失敗しました。");
+      alert(`AIフィードバックの取得に失敗しました。\n詳細: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
@@ -1064,7 +1064,7 @@ ${JSON.stringify(baseExercises, null, 2)}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1103,9 +1103,9 @@ ${JSON.stringify(baseExercises, null, 2)}
         }));
         setExerciseRecords(records);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("AIによるメニュー調整に失敗しました。");
+      alert(`AIによるメニュー調整に失敗しました。\n詳細: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
@@ -1263,7 +1263,7 @@ ${JSON.stringify(menus, null, 2)}
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: apiContents,
         config: {
           responseMimeType: "application/json",
@@ -1333,9 +1333,9 @@ ${JSON.stringify(menus, null, 2)}
         // 未来の予定の自動再構築
         buildScheduleWithAI(data.updatedMenus, schedule);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("AIへのリクエストに失敗しました。キーまたは入力内容を確認してください。");
+      alert(`AIへのリクエストに失敗しました。\n詳細: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
@@ -1391,7 +1391,7 @@ ${getUserProfileContext()}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1402,9 +1402,9 @@ ${getUserProfileContext()}
       const data = JSON.parse(response.text || "{}");
       setAlternativesList(data.alternatives || []);
       setAlternativeRequest({ exerciseName, index });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("代替種目の提案取得に失敗しました。");
+      alert(`代替種目の提案取得に失敗しました。\n詳細: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
