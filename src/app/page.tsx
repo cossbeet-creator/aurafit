@@ -525,27 +525,6 @@ export default function Home() {
         return;
       }
 
-      // 週のインデックスを計算するヘルパー（月曜始まり）
-      const getWeekIndex = (dateStr: string, baseDate: Date) => {
-        const d = new Date(dateStr);
-        const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
-        const baseDay = base.getDay();
-        const baseMonday = new Date(base);
-        const offset = baseDay === 0 ? -6 : 1 - baseDay;
-        baseMonday.setDate(base.getDate() + offset);
-        
-        const diffTime = d.getTime() - baseMonday.getTime();
-        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-        return Math.floor(diffDays / 7);
-      };
-
-      const formatDaysWithWeek = (daysList: string[]) => {
-        return daysList.map(dateStr => {
-          const weekIdx = getWeekIndex(dateStr, today);
-          return { date: dateStr, weekIndex: weekIdx };
-        });
-      };
-
       const routineKeys = Object.keys(targetMenus);
 
       // 直近の完了メニューを特定するロジック（A, B, C...のローテーションバトン引き継ぎ用）
@@ -566,38 +545,26 @@ export default function Home() {
 
       const prompt = `
 あなたの役割は、科学的なエビデンス（運動生理学・スポーツ科学）に基づく一流のパーソナルトレーナーです。
-ユーザーが指定した日程に対して、登録された「基本メニュー」を参考に、怪我のリスクを最小化し回復を最大化する最適なスケジュールを作成することです。
+ユーザーが指定した日程に対して、登録された「基本メニュー」のルーティン（A, B, Cなど）をカレンダーへ最適に配置してください。
 
 ${getUserProfileContext()}
 
 【ユーザーデータ】
-- 確定している行ける日 (confirmedDays): ${JSON.stringify(formatDaysWithWeek(confirmedDays))}
-- 行けるかもしれない微妙な日 (maybeDays): ${JSON.stringify(formatDaysWithWeek(maybeDays))}
-- 絶対に行けないオフ日 (noDays): ${JSON.stringify(formatDaysWithWeek(noDays))}
+- 確定している行ける日 (confirmedDays): ${JSON.stringify(confirmedDays)}
+- 行けるかもしれない微妙な日 (maybeDays): ${JSON.stringify(maybeDays)}
+- 絶対に行けないオフ日 (noDays): ${JSON.stringify(noDays)}
 - 基本メニューのルーティン名: [${routineKeys.join(", ")}]
-- 現在設定されている基本メニュー (menus): ${JSON.stringify(targetMenus, null, 2)}
 - 直近で完了した基本メニュー: "${lastCompletedWorkout}"
 - 開始日: ${formatDate(today)}
 - 終了日: ${formatDate(end)} (開始日から1ヶ月後)
 
 【スケジュール配置ルール】
-※重要：以下のルールにおいて、「連続して配置しない（中1日以上空ける）」という安全ルールは、他のすべての配置ルール（ルーティンの順番配置ルールなど）よりも最優先されます。
-
-1. 【最優先】いかなる場合も、2日連続でトレーニング予定を配置しないでください。すべてのトレーニング日の間には、必ず中1日以上のオフ（または予定なし）を挟んでください。
-   - もしユーザーから「確定している行ける日 (confirmedDays)」や「微妙な日 (maybeDays)」が連続した日付（例：月曜日と火曜日）で送信されていたとしても、絶対に連続して配置しないでください。その場合は、どちらか片方のみに予定を配置し、もう片方は空（予定なし）にしてください。
-2. 各メニューに含まれる種目の主働筋を考慮し、同じ部位のトレーニングは中48〜72時間空けてください。
-3. 全身法（Full Body / ブレンドメニュー）は全身の大筋群（胸・背中・脚）すべてを一度に鍛えるため、以下のルールを厳守してください：
-   - 全身法（Full Body）を配置した日の翌日は、いかなるメニュー（A, B, C等、および他の全身法）も絶対に配置しないでください（必ず翌日はオフにしてください）。
-   - 同じ週に全身法（Full Body）を2日配置する場合は、必ず中2日以上空けてください（例：水曜と土曜など）。
-4. スクワットとデッドリフトは連続しないようにし、必ず中1日以上のオフ（または下半身を使わないメニュー）を挟んでください。
-5. 必ず今日（開始日）以降の日程のみに配置し、過去の日付には一切配置しないでください。
-6. 今回は、直近で完了した基本メニューの「次のメニュー」から順番に未来の予定（開始日以降）へ配置を開始してください。
-7. 原則として、基本メニューのルーティン（例: A ➔ B ➔ C ➔ A...）をカレンダーの確定している行ける日（confirmedDays）と微妙な日（maybeDays）に順番通りに配置してください。このルーティン順序を崩さずに並べることが最優先です。
-8. 例外ルール（全身法への自動ブレンド）：
-   - ある週（同じweekIndex）の中に、行ける日（confirmedDays）と微妙な日（maybeDays）の合計日数が2日以下しかない場合に限り、AIはその週の予定を全身をバランスよく鍛える「全身法（Full Body）」のメニューとして動的に分解・再合成し、予定を割り当ててください。その際、1日あたりの最大種目数は5〜6種目以内に制限し、補助種目（腕や肩の単関節種目）を優先的に間引き、大筋群（胸・背中・脚）の主要コンパウンド種目を1種目ずつ厳選して組み合わせ、customExercisesの中にその配列を記述してください。
-   - 週3日以上行ける日がある週は、一切ブレンドせず、順番通りにローテーションを配置してください（この場合はcustomExercisesは含めないか、空にしてください）。
-   - ブレンド（全身法）を行った週の次の週は、基本ローテーションの最初（Aなど、直近完了メニューの次）からリセットして再開してください。
-9. 送信されていない「未定の日（DEFAULT）」には予定を割り当てないでください。
+1. ユーザーが設定した「確定している行ける日 (confirmedDays)」および「行けるかもしれない微妙な日 (maybeDays)」にのみトレーニングを配置してください。未定の日やオフの日には一切配置しないでください。
+2. 直近で完了した基本メニューの「次のメニュー（例: 直近がAならB）」から開始し、ルーティンの順序（例: A ➔ B ➔ C ➔ A...）を崩さずに日付順に割り当ててください。
+3. 筋肉の回復を最優先するため、同じメニュー（同じアルファベット、例: AとA、BとB、CとC）の間は、必ず中2日以上（中48〜72時間以上）の間隔を空けて配置してください。
+   - 例：月曜日に「A」を配置した場合、次の「A」は木曜日以降にしか配置できません（火曜日と水曜日の間はAを配置できません）。
+   - もし、次に配置すべきメニューが間隔ルール（中2日）を満たせない場合は、その日には配置を行わず（空欄にしてスキップ）、次の👌/❓の日にスライドして配置してください。
+4. 必ず今日（開始日）以降の日程のみに配置し、過去の日付には一切配置しないでください。
 ${scheduleInstruction.trim() ? `
 【ユーザーからの追加指示】
 ${scheduleInstruction.trim()}
@@ -612,10 +579,7 @@ ${scheduleInstruction.trim()}
     {
       "date": "YYYY-MM-DD",
       "workoutName": "A",
-      "isTemp": true,
-      "customExercises": [ // ブレンド（全身法）した時のみ記述、通常のローテーション時は不要
-        { "name": "種目名", "weight": 40, "reps": 10, "sets": 3 }
-      ]
+      "isTemp": true
     }
   ]
 }
@@ -644,7 +608,6 @@ ${scheduleInstruction.trim()}
       if (data.schedule) {
         // AI提案の日程と既存の日程を安全にマージする
         const aiProposal: ScheduleItem[] = data.schedule;
-        const allBaseExerciseNames = Object.values(targetMenus).flatMap(exs => exs.map(e => e.name));
 
         // 保護対象（期間外のもの、今日より過去のもの、または期間内だがすでに完了しているもの）を抽出
         const preservedSchedule = targetSchedule.filter(item => {
@@ -673,15 +636,10 @@ ${scheduleInstruction.trim()}
           })
           .map(aiItem => {
             const standardizedDate = formatDate(new Date(aiItem.date));
-            // ハルシネーション（未登録の種目）を防ぐため、登録済みの基本種目名と完全一致するもののみにフィルタ
-            const validatedExercises = aiItem.customExercises
-              ? aiItem.customExercises.filter((ex: any) => allBaseExerciseNames.includes(ex.name))
-              : undefined;
-
             return {
               ...aiItem,
               date: standardizedDate,
-              customExercises: validatedExercises && validatedExercises.length > 0 ? validatedExercises : undefined
+              customExercises: undefined // シンプル設計では全身法カスタム種目は不要
             };
           });
 
