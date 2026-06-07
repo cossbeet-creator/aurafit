@@ -141,6 +141,19 @@
   outline-offset: 1px;
 }
 
+.todayDay {
+  border: 2px solid var(--color-primary) !important;
+}
+
+.pastDay {
+  opacity: 0.45;
+  box-shadow: none !important;
+}
+
+.pastDay:hover {
+  opacity: 0.8;
+}
+
 .dayLabel {
   font-size: 0.8rem;
 }

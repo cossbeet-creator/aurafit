@@ -1637,6 +1637,12 @@ ${getUserProfileContext()}
                 const isScheduled = schedule.some(item => item.date === dateStr && item.workoutName);
                 const isCompleted = schedule.some(item => item.date === dateStr && item.completed);
 
+                const todayObj = new Date();
+                const compareToday = new Date(todayObj.getFullYear(), todayObj.getMonth(), todayObj.getDate());
+                const compareD = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                const isPast = compareD < compareToday;
+                const isToday = dateStr === formatDate(todayObj);
+
                 let stateClass = styles.dayDefault;
                 if (state === "CONFIRMED_GO") stateClass = styles.dayGo;
                 else if (state === "CONFIRMED_NO") stateClass = styles.dayNo;
@@ -1645,7 +1651,7 @@ ${getUserProfileContext()}
                 return (
                   <button 
                     key={idx} 
-                    className={`${styles.calendarDay} ${stateClass} ${isSelected ? styles.selectedDay : ""}`}
+                    className={`${styles.calendarDay} ${stateClass} ${isSelected ? styles.selectedDay : ""} ${isToday ? styles.todayDay : ""} ${isPast ? styles.pastDay : ""}`}
                     onClick={() => handleDayClick(dateStr)}
                   >
                     <span className={styles.dayLabel}>{d.getDate()}</span>
