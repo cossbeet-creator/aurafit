@@ -1,10 +1,13 @@
 .container {
+  width: 100%;
   max-width: 480px; /* モバイルファーストでPCでも綺麗に中央寄せ */
   margin: 0 auto;
   padding: 16px 16px 80px 16px; /* 下部ナビ用の余白 */
   min-height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 /* ヘッダー */
@@ -81,9 +84,10 @@
 
 .calendarGrid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
   margin-bottom: 16px;
+  width: 100%;
 }
 
 .weekdayHeader {
@@ -107,6 +111,10 @@
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  box-sizing: border-box;
 }
 
 /* カレンダー各状態の色・光彩 */
@@ -136,9 +144,10 @@
 }
 
 .selectedDay {
-  transform: scale(1.08);
+  transform: scale(1.03);
   outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
+  outline-offset: -2px;
+  z-index: 2;
 }
 
 .todayDay {
