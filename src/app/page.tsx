@@ -193,6 +193,60 @@ export default function Home() {
   const [editableMenus, setEditableMenus] = useState<Menus>({});
   const [isEditingManual, setIsEditingManual] = useState(false);
 
+  // 画面の回転やリサイズ時のレイアウト崩れ対策
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let resizeTimeout: NodeJS.Timeout;
+    let savedScrollY = 0;
+    let isLandscape = window.innerWidth > window.innerHeight;
+
+    const handleResizeOrRotation = () => {
+      const currentIsLandscape = window.innerWidth > window.innerHeight;
+
+      // 縦画面から横画面へ切り替わる瞬間に、現在のスクロール位置を記憶する
+      if (!isLandscape && currentIsLandscape) {
+        savedScrollY = window.scrollY || document.documentElement.scrollTop;
+      }
+      isLandscape = currentIsLandscape;
+
+      // CSS変数 --app-height の更新
+      document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        // 回転アニメーション完了後の高さを再適用
+        document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+
+        if (!currentIsLandscape) {
+          // 縦画面に戻った際、保存していたスクロール位置に復元する
+          window.scrollTo(0, savedScrollY);
+          
+          // 強制リフローによってブラウザの再レイアウトとスクロールバー表示を確定させる
+          const originalOverflow = document.body.style.overflow;
+          document.body.style.overflow = "hidden";
+          document.body.offsetHeight; // reflowをトリガー
+          document.body.style.overflow = originalOverflow;
+
+          // リフロー後に再度スクロール位置を設定
+          window.scrollTo(0, savedScrollY);
+        }
+      }, 150);
+    };
+
+    // 初期化時にもCSS変数をセット
+    document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+
+    window.addEventListener("resize", handleResizeOrRotation);
+    window.addEventListener("orientationchange", handleResizeOrRotation);
+
+    return () => {
+      clearTimeout(resizeTimeout);
+      window.removeEventListener("resize", handleResizeOrRotation);
+      window.removeEventListener("orientationchange", handleResizeOrRotation);
+    };
+  }, []);
+
   // 1. 初期ロード
   useEffect(() => {
     if (typeof window !== "undefined") {

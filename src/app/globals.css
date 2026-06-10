@@ -80,19 +80,11 @@
 body {
   background-color: var(--bg-main);
   color: var(--text-main);
-  min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
   overflow-x: hidden;
   position: relative;
   transition: background-color 0.3s ease, color 0.3s ease;
   background-attachment: fixed;
-}
-
-/* 横画面時にbodyのスクロールをロックし、高さ計算の狂いを防止 */
-@media screen and (orientation: landscape) and (max-height: 500px) {
-  body {
-    overflow: hidden;
-    height: 100dvh;
-  }
 }
 
 /* ライト/ダークでの背景グラデーション切り替え */
@@ -183,5 +175,9 @@ body::before {
 @media screen and (orientation: landscape) and (max-height: 500px) {
   .landscapeBlocker {
     display: flex;
+  }
+  html, body {
+    overflow: hidden !important;
+    height: var(--app-height, 100vh) !important;
   }
 }
