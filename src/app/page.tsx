@@ -481,6 +481,50 @@ export default function Home() {
     setShowUndoBanner(false);
   };
 
+  // 今日より前の未消化予定（scheduleレコードがあり、completedがfalseで予定名がある）の数をカウント
+  const getPastUncompletedCount = () => {
+    if (typeof window === "undefined") return 0;
+    const todayStr = formatDate(new Date());
+    return schedule.filter(item => item.date < todayStr && !item.completed && item.workoutName).length;
+  };
+
+  // 過去の未完了予定をすべてオフ（❌）にしてスケジュールから消去
+  const clearPastUncompletedWorkouts = () => {
+    const pastUncompletedItems = schedule.filter(item => {
+      const todayStr = formatDate(new Date());
+      return item.date < todayStr && !item.completed && item.workoutName;
+    });
+
+    if (pastUncompletedItems.length === 0) return;
+
+    const count = pastUncompletedItems.length;
+    if (!confirm(`今日より前の未消化の予定が ${count} 件あります。\nこれらをすべて「オフ(❌)」にしてスケジュールを整理しますか？`)) {
+      return;
+    }
+
+    const todayStr = formatDate(new Date());
+
+    // 1. dateStates を更新（過去の未完了日を CONFIRMED_NO に変更）
+    const updatedDateStates = { ...dateStates };
+    pastUncompletedItems.forEach(item => {
+      updatedDateStates[item.date] = "CONFIRMED_NO";
+    });
+    setDateStates(updatedDateStates);
+    saveToLocalStorage("fitrum_date_states", updatedDateStates);
+
+    // 2. schedule から未完了の過去予定を削除
+    const updatedSchedule = schedule.filter(item => {
+      const isPastUncompleted = item.date < todayStr && !item.completed && item.workoutName;
+      return !isPastUncompleted;
+    });
+    setSchedule(updatedSchedule);
+    saveToLocalStorage("fitrum_schedule", updatedSchedule);
+
+    // 3. 変更ありフラグを立てて、ユーザーにAIスケジュール構築を促す
+    setHasUnsavedDateChanges(true);
+    alert("過去の未消化予定をすべて「オフ」にしました。\n「AIスケジュール構築」ボタンを押して未来のスケジュールを再編成してください。");
+  };
+
   // 特定の日付の状態を直接設定する
   const setSpecificDateState = (dateStr: string, next: DateState) => {
     const newStates = { ...dateStates, [dateStr]: next };
@@ -1882,6 +1926,38 @@ ${getUserProfileContext()}
               )}
 
               <div className={styles.calendarActions} style={{ flexDirection: "column", gap: "8px" }}>
+                {getPastUncompletedCount() > 0 && (
+                  <button
+                    onClick={clearPastUncompletedWorkouts}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid rgba(255, 69, 58, 0.4)",
+                      background: "linear-gradient(135deg, rgba(255, 69, 58, 0.15) 0%, rgba(255, 69, 58, 0.05) 100%)",
+                      color: "#ff453a",
+                      fontSize: "0.75rem",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      transition: "all 0.2s ease",
+                      boxShadow: "0 2px 8px rgba(255, 69, 58, 0.1)"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "linear-gradient(135deg, rgba(255, 69, 58, 0.25) 0%, rgba(255, 69, 58, 0.1) 100%)";
+                      e.currentTarget.style.boxShadow = "0 4px 12px rgba(255, 69, 58, 0.2)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "linear-gradient(135deg, rgba(255, 69, 58, 0.15) 0%, rgba(255, 69, 58, 0.05) 100%)";
+                      e.currentTarget.style.boxShadow = "0 2px 8px rgba(255, 69, 58, 0.1)";
+                    }}
+                  >
+                    <Trash2 size={12} /> 過去の未完了予定 ({getPastUncompletedCount()}件) を一括オフ
+                  </button>
+                )}
                 {hasUnsavedDateChanges && (
                   <div 
                     style={{ 
