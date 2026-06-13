@@ -792,6 +792,32 @@ ${scheduleInstruction.trim()}
     setExerciseRecords(updated);
   };
 
+  // セット数の追加
+  const addNewSet = (exIndex: number) => {
+    const updated = [...exerciseRecords];
+    const ex = updated[exIndex];
+    const lastSet = ex.sets[ex.sets.length - 1];
+    
+    const newSet = {
+      weight: lastSet ? lastSet.weight : ex.targetWeight,
+      reps: lastSet ? lastSet.reps : ex.targetReps,
+      completed: false
+    };
+    
+    ex.sets = [...ex.sets, newSet];
+    setExerciseRecords(updated);
+  };
+
+  // セット数の削減
+  const deleteLastSet = (exIndex: number) => {
+    const updated = [...exerciseRecords];
+    const ex = updated[exIndex];
+    if (ex.sets.length <= 1) return; // 1セット未満にはしない
+    
+    ex.sets = ex.sets.slice(0, -1);
+    setExerciseRecords(updated);
+  };
+
   // 5. トレーニング完了とワンストップ重量更新
   const completeWorkout = async () => {
     const isSelectedDateCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
@@ -1970,6 +1996,25 @@ ${getUserProfileContext()}
                         </div>
                       ))}
                     </div>
+                    {(!isWorkoutCompleted || isEditingPast) && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "8px" }}>
+                        <button 
+                          className={styles.btnSecondary} 
+                          style={{ padding: "2px 8px", fontSize: "0.7rem", height: "22px", display: "flex", alignItems: "center", gap: "2px" }}
+                          onClick={() => deleteLastSet(exIdx)}
+                          disabled={ex.sets.length <= 1}
+                        >
+                          <Minus size={10} /> セット削減
+                        </button>
+                        <button 
+                          className={styles.btnSecondary} 
+                          style={{ padding: "2px 8px", fontSize: "0.7rem", height: "22px", display: "flex", alignItems: "center", gap: "2px" }}
+                          onClick={() => addNewSet(exIdx)}
+                        >
+                          <Plus size={10} /> セット追加
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
 
