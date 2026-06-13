@@ -68,6 +68,9 @@ type UserProfile = {
   limitations: string;
   preferences: string;
   equipment: string;
+  barbellStep: number;
+  dumbbellStep: number;
+  machineStep: number;
 };
 
 type MenuHistoryItem = {
@@ -82,7 +85,10 @@ const INITIAL_PROFILE: UserProfile = {
   experience: "初心者〜中級者",
   limitations: "なし（痛みやケガなし）",
   preferences: "特になし",
-  equipment: "ジムのフル器具"
+  equipment: "ジムのフル器具",
+  barbellStep: 2.5,
+  dumbbellStep: 2,
+  machineStep: 5
 };
 
 // -------------------------------------------------------------
@@ -182,6 +188,7 @@ export default function Home() {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isEditingPast, setIsEditingPast] = useState(false);
   const [scheduleInstruction, setScheduleInstruction] = useState("");
+  const [progressionInstruction, setProgressionInstruction] = useState("");
   const [hasUnsavedDateChanges, setHasUnsavedDateChanges] = useState(false);
   
   // --- Tab 2: AIメニュー構築用の状態 ---
@@ -318,7 +325,13 @@ export default function Home() {
       }
 
       try {
-        if (savedProfile) setUserProfile(JSON.parse(savedProfile));
+        if (savedProfile) {
+          const parsed = JSON.parse(savedProfile);
+          if (parsed.barbellStep === undefined) parsed.barbellStep = 2.5;
+          if (parsed.dumbbellStep === undefined) parsed.dumbbellStep = 2;
+          if (parsed.machineStep === undefined) parsed.machineStep = 5;
+          setUserProfile(parsed);
+        }
       } catch (e) {
         console.error("Failed to parse savedProfile, resetting...", e);
         localStorage.removeItem("fitrum_user_profile");
@@ -726,6 +739,27 @@ ${scheduleInstruction.trim()}
     if (isEditingPast) return;
 
     const scheduled = schedule.find(item => item.date === selectedDateStr);
+    
+    // 一時保存データのチェックと復元
+    const tempRecordsStr = localStorage.getItem("fitrum_temp_exercise_records");
+    const tempDate = localStorage.getItem("fitrum_temp_exercise_records_date");
+
+    if (tempRecordsStr && tempDate === selectedDateStr && (!scheduled || !scheduled.completed)) {
+      try {
+        const parsed = JSON.parse(tempRecordsStr);
+        if (parsed && parsed.length > 0) {
+          if (scheduled) {
+            setCurrentWorkoutName(scheduled.workoutName);
+            setActiveAdjustmentReason(scheduled.adjustmentReason || "");
+          }
+          setExerciseRecords(parsed);
+          return; // 一時データから復元した場合は以降の通常初期化をスキップ
+        }
+      } catch (e) {
+        console.error("Failed to parse tempRecords", e);
+      }
+    }
+
     if (scheduled && !scheduled.completed) {
       setCurrentWorkoutName(scheduled.workoutName);
       
@@ -773,6 +807,22 @@ ${scheduleInstruction.trim()}
       setActiveAdjustmentReason("");
     }
   }, [selectedDateStr, schedule, menus, isEditingPast]);
+
+  // 実績入力中の一時保存（タスクキル・リロード対策）
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    const isCompleted = schedule.some(item => item.date === selectedDateStr && item.completed);
+    
+    if (exerciseRecords.length > 0 && selectedDateStr && !isCompleted && !isEditingPast) {
+      localStorage.setItem("fitrum_temp_exercise_records", JSON.stringify(exerciseRecords));
+      localStorage.setItem("fitrum_temp_exercise_records_date", selectedDateStr);
+    } else if (isCompleted || isEditingPast) {
+      // 完了済みまたは過去編集モードの場合は一時保存をクリーンアップ
+      localStorage.removeItem("fitrum_temp_exercise_records");
+      localStorage.removeItem("fitrum_temp_exercise_records_date");
+    }
+  }, [exerciseRecords, selectedDateStr, schedule, isEditingPast]);
 
   // 実績入力値の変更ハンドラー
   const handleSetChange = (exIndex: number, setIndex: number, field: "weight" | "reps", value: number) => {
@@ -860,6 +910,9 @@ ${scheduleInstruction.trim()}
 
           setIsEditingPast(false);
           setLoading(false);
+          localStorage.removeItem("fitrum_temp_exercise_records");
+          localStorage.removeItem("fitrum_temp_exercise_records_date");
+          setProgressionInstruction("");
           alert(`過去の実績として登録・保存しました！\n連続記録: 🔥 ${newStreak}日`);
 
           // 未来の予定の自動再構築 (バトンローテーションの更新に対応)
@@ -895,6 +948,12 @@ ${JSON.stringify(exerciseRecords, null, 2)}
 【重量設定ルール】
 - 実施した各セットにおいて、基本メニューの目標重量・回数をクリアしている場合 ➔ 次回増量。
 - 疲労による調整などでセット数や重量を減らしていた場合は、維持を推奨してください。
+- 重量（targetWeight）を提案する際は、ユーザーが設定した以下の器具カテゴリ別の最小調整単位の倍数で設定してください。中途半端な端数（例: 5kg刻みなら50, 55など。2.5kg刻みなら52.5, 55など）は絶対に避けてください。
+  - バーベル系種目: ${userProfile.barbellStep || 2.5}kg の倍数
+  - ダンベル系種目: ${userProfile.dumbbellStep || 2}kg の倍数
+  - マシン系種目: ${userProfile.machineStep || 5}kg の倍数
+
+${progressionInstruction ? `【ユーザーからの次回への追加要望・指示】\n"${progressionInstruction}"\n※このユーザーからの指示を重量更新や回数・セット数の決定に最大限優先・反映させてください。` : ""}
 
 【出力フォーマット】
 {
@@ -945,6 +1004,9 @@ ${JSON.stringify(exerciseRecords, null, 2)}
     });
     setSchedule(updatedSchedule);
     saveToLocalStorage("fitrum_schedule", updatedSchedule);
+    localStorage.removeItem("fitrum_temp_exercise_records");
+    localStorage.removeItem("fitrum_temp_exercise_records_date");
+    setProgressionInstruction("");
 
     let finalMenus = menus;
     if (updatedExercisesProposal.length > 0) {
@@ -1131,6 +1193,10 @@ ${JSON.stringify(baseExercises, null, 2)}
 - 寝不足・疲労: セット数を1〜2セット減らす、または重量を5%〜10%下げる。
 - 関節に軽い違和感: 違和感のある関節に負担がかかる種目を、低負荷・高回数（または安全な代替種目）に変更する。
 - 時短希望: 補助種目をカットし、大きな多関節種目にのみ絞ってセット数も減らす。
+- 重量（weight）は必ずユーザーが設定した以下の器具別最小調整単位の倍数で設定してください。中途半端な端数は絶対に避けてください。
+  - バーベル系種目: ${userProfile.barbellStep || 2.5}kg の倍数
+  - ダンベル系種目: ${userProfile.dumbbellStep || 2}kg の倍数
+  - マシン系種目: ${userProfile.machineStep || 5}kg の倍数
 
 以下のJSONフォーマットで回答してください。余計なテキストは含めないでください。
 
@@ -1270,6 +1336,12 @@ ${JSON.stringify(baseExercises, null, 2)}
 - 目標: "${userProfile.goals}"
 - 利用可能な器具: "${userProfile.equipment}"
 
+【重量設定ルール】
+- 重量（weight）は必ずユーザーが設定した以下の器具別最小調整単位の倍数で設定してください。中途半端な端数は絶対に避けてください。
+  - バーベル系種目: ${userProfile.barbellStep || 2.5}kg の倍数
+  - ダンベル系種目: ${userProfile.dumbbellStep || 2}kg の倍数
+  - マシン系種目: ${userProfile.machineStep || 5}kg の倍数
+
 以下のJSONフォーマットで回答してください。
 
 【出力フォーマット】
@@ -1291,6 +1363,12 @@ ${JSON.stringify(menus, null, 2)}
 【ユーザーの改善要望】
 "${aiRequestText}"
 
+【重量設定ルール】
+- 重量（weight）は必ずユーザーが設定した以下の器具別最小調整単位の倍数で設定してください。中途半端な端数は絶対に避けてください。
+  - バーベル系種目: ${userProfile.barbellStep || 2.5}kg の倍数
+  - ダンベル系種目: ${userProfile.dumbbellStep || 2}kg の倍数
+  - マシン系種目: ${userProfile.machineStep || 5}kg の倍数
+
 以下のJSONフォーマットで回答してください。
 
 【出力フォーマット】
@@ -1309,6 +1387,12 @@ ${JSON.stringify(menus, null, 2)}
 
 【ユーザーの入力テキスト】
 "${aiRequestText}"
+
+【重量設定ルール】
+- 重量（weight）は必ずユーザーが設定した以下の器具別最小調整単位の倍数で設定してください。中途半端な端数は絶対に避けてください。
+  - バーベル系種目: ${userProfile.barbellStep || 2.5}kg の倍数
+  - ダンベル系種目: ${userProfile.dumbbellStep || 2}kg の倍数
+  - マシン系種目: ${userProfile.machineStep || 5}kg の倍数
 
 以下のJSONフォーマットで回答してください。余計な説明テキストは含めないでください。
 
@@ -2056,9 +2140,23 @@ ${getUserProfileContext()}
                     </button>
                   </div>
                 ) : (
-                  <button className={`${styles.btnPrimary} ${styles.submitBtn}`} onClick={completeWorkout}>
-                    <Zap size={16} /> {selectedDateStr < formatDate(new Date()) ? "過去の記録を保存" : "本日のトレーニングを完了"}
-                  </button>
+                  <>
+                    {(!isWorkoutCompleted || isEditingPast) && (
+                      <div style={{ marginBottom: "12px", width: "100%" }}>
+                        <input
+                          type="text"
+                          className={styles.textInput}
+                          style={{ width: "100%", fontSize: "0.75rem", padding: "8px 10px" }}
+                          placeholder="💬 次回メニューへの要望（例：次回は肩を増やして / 維持で）"
+                          value={progressionInstruction}
+                          onChange={(e) => setProgressionInstruction(e.target.value)}
+                        />
+                      </div>
+                    )}
+                    <button className={`${styles.btnPrimary} ${styles.submitBtn}`} onClick={completeWorkout}>
+                      <Zap size={16} /> {selectedDateStr < formatDate(new Date()) ? "過去の記録を保存" : "本日のトレーニングを完了"}
+                    </button>
+                  </>
                 )}
               </div>
             ) : (
@@ -2278,6 +2376,68 @@ ${getUserProfileContext()}
                           saveToLocalStorage("fitrum_user_profile", updated);
                         }} 
                       />
+                    </div>
+
+                    <div style={{ borderTop: "1px dashed rgba(255,255,255,0.05)", marginTop: "8px", paddingTop: "8px" }}>
+                      <span style={{ fontSize: "0.65rem", color: "var(--color-primary)", fontWeight: "600", display: "block", marginBottom: "4px" }}>
+                        ⚙️ 器具別・重量の調整最小単位
+                      </span>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: "0.55rem", color: "var(--text-muted)" }}>バーベル</label>
+                          <select
+                            className={styles.textInput}
+                            style={{ width: "100%", padding: "2px 4px", fontSize: "0.7rem", background: "rgba(0,0,0,0.3)", color: "var(--text-main)" }}
+                            value={userProfile.barbellStep || 2.5}
+                            onChange={(e) => {
+                              const updated = { ...userProfile, barbellStep: parseFloat(e.target.value) || 2.5 };
+                              setUserProfile(updated);
+                              saveToLocalStorage("fitrum_user_profile", updated);
+                            }}
+                          >
+                            <option value="1">1kg</option>
+                            <option value="2">2kg</option>
+                            <option value="2.5">2.5kg</option>
+                            <option value="5">5kg</option>
+                          </select>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: "0.55rem", color: "var(--text-muted)" }}>ダンベル</label>
+                          <select
+                            className={styles.textInput}
+                            style={{ width: "100%", padding: "2px 4px", fontSize: "0.7rem", background: "rgba(0,0,0,0.3)", color: "var(--text-main)" }}
+                            value={userProfile.dumbbellStep || 2}
+                            onChange={(e) => {
+                              const updated = { ...userProfile, dumbbellStep: parseFloat(e.target.value) || 2 };
+                              setUserProfile(updated);
+                              saveToLocalStorage("fitrum_user_profile", updated);
+                            }}
+                          >
+                            <option value="1">1kg</option>
+                            <option value="2">2kg</option>
+                            <option value="2.5">2.5kg</option>
+                            <option value="5">5kg</option>
+                          </select>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: "0.55rem", color: "var(--text-muted)" }}>マシン</label>
+                          <select
+                            className={styles.textInput}
+                            style={{ width: "100%", padding: "2px 4px", fontSize: "0.7rem", background: "rgba(0,0,0,0.3)", color: "var(--text-main)" }}
+                            value={userProfile.machineStep || 5}
+                            onChange={(e) => {
+                              const updated = { ...userProfile, machineStep: parseFloat(e.target.value) || 5 };
+                              setUserProfile(updated);
+                              saveToLocalStorage("fitrum_user_profile", updated);
+                            }}
+                          >
+                            <option value="2">2kg</option>
+                            <option value="2.5">2.5kg</option>
+                            <option value="4.5">4.5kg</option>
+                            <option value="5">5kg</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
