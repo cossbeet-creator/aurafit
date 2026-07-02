@@ -384,6 +384,83 @@ export default function Home() {
     localStorage.setItem(key, JSON.stringify(data));
   };
 
+  // 全データのバックアップをJSONファイルとしてエクスポート
+  const exportData = () => {
+    try {
+      const backupData = {
+        version: "1.0",
+        exportDate: new Date().toISOString(),
+        menus: localStorage.getItem("fitrum_menus") ? JSON.parse(localStorage.getItem("fitrum_menus")!) : INITIAL_MENUS,
+        schedule: localStorage.getItem("fitrum_schedule") ? JSON.parse(localStorage.getItem("fitrum_schedule")!) : [],
+        dateStates: localStorage.getItem("fitrum_date_states") ? JSON.parse(localStorage.getItem("fitrum_date_states")!) : {},
+        streak: localStorage.getItem("fitrum_streak") ? JSON.parse(localStorage.getItem("fitrum_streak")!) : 0,
+        userProfile: localStorage.getItem("fitrum_user_profile") ? JSON.parse(localStorage.getItem("fitrum_user_profile")!) : INITIAL_PROFILE,
+        menuHistory: localStorage.getItem("fitrum_menu_history") ? JSON.parse(localStorage.getItem("fitrum_menu_history")!) : []
+      };
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const yyyymmdd = formatDate(new Date()).replace(/-/g, "");
+      a.href = url;
+      a.download = `fitrum_backup_${yyyymmdd}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(`エクスポート中にエラーが発生しました。\n詳細: ${e.message || e}`);
+    }
+  };
+
+  // JSONバックアップファイルからデータを復元
+  const importData = (file: File) => {
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const backupData = JSON.parse(text);
+        
+        // 簡単なフォーマットバリデーション
+        if (!backupData || typeof backupData !== "object" || !backupData.menus || !backupData.schedule) {
+          alert("無効なバックアップファイルです。正しいJSONファイルを選択してください。");
+          return;
+        }
+
+        if (!confirm("データを復元しますか？\n現在のデータは上書きされ、復元されたデータに置き換わります。")) {
+          return;
+        }
+
+        // LocalStorageに保存
+        saveToLocalStorage("fitrum_menus", backupData.menus);
+        saveToLocalStorage("fitrum_schedule", backupData.schedule);
+        saveToLocalStorage("fitrum_date_states", backupData.dateStates || {});
+        saveToLocalStorage("fitrum_streak", backupData.streak || 0);
+        saveToLocalStorage("fitrum_user_profile", backupData.userProfile || INITIAL_PROFILE);
+        if (backupData.menuHistory) {
+          saveToLocalStorage("fitrum_menu_history", backupData.menuHistory);
+        }
+
+        // 状態を更新
+        setMenus(backupData.menus);
+        setSchedule(backupData.schedule);
+        setDateStates(backupData.dateStates || {});
+        setStreak(backupData.streak || 0);
+        setUserProfile(backupData.userProfile || INITIAL_PROFILE);
+        if (backupData.menuHistory) {
+          setMenuHistory(backupData.menuHistory);
+        }
+
+        alert("データの復元が完了しました！");
+      } catch (err: any) {
+        alert(`復元中にエラーが発生しました。\n詳細: ${err.message || err}`);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // メニュー変更履歴を保存するヘルパー
   const saveMenuToHistory = (description: string, targetMenus: Menus) => {
     const now = new Date();
@@ -603,26 +680,21 @@ export default function Home() {
       const end = new Date();
       end.setDate(today.getDate() + 29);
 
-      // 前後30日の範囲を設定してフィルタリング
+      // 前後30日の範囲を設定してフィルタリング（文字列比較でタイムゾーン依存バグを防止）
+      const todayStr = formatDate(today);
       const rangeStart = new Date(today);
       rangeStart.setDate(today.getDate() - 30);
+      const rangeStartStr = formatDate(rangeStart);
       const rangeEnd = new Date(today);
       rangeEnd.setDate(today.getDate() + 30);
+      const rangeEndStr = formatDate(rangeEnd);
 
       const filterByRange = (dateStr: string) => {
-        const d = new Date(dateStr);
-        const compareDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        const compareStart = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
-        const compareEnd = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
-        return compareDate >= compareStart && compareDate <= compareEnd;
+        return dateStr >= rangeStartStr && dateStr <= rangeEndStr;
       };
 
       const filterFutureOnly = (dateStr: string) => {
-        const d = new Date(dateStr);
-        const compareDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const compareEnd = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
-        return compareDate >= compareToday && compareDate <= compareEnd;
+        return dateStr >= todayStr && dateStr <= rangeEndStr;
       };
 
       const confirmedDays = Object.keys(targetDateStates)
@@ -726,13 +798,10 @@ ${scheduleInstruction.trim() ? `
 
         // 保護対象（期間外のもの、今日より過去のもの、または期間内だがすでに完了しているもの）を抽出
         const preservedSchedule = targetSchedule.filter(item => {
-          const itemDate = new Date(item.date);
-          const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
-          const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
           const isInRange = filterByRange(item.date);
           
           if (!isInRange) return true;
-          if (compareItemDate < compareToday) return true;
+          if (item.date < todayStr) return true; // 安全な文字列比較で過去日付を保護
           if (item.completed) return true;
           return false;
         });
@@ -743,10 +812,7 @@ ${scheduleInstruction.trim() ? `
             if (!aiItem.date || isNaN(Date.parse(aiItem.date))) return false;
             const standardizedDate = formatDate(new Date(aiItem.date));
             const alreadyCompleted = targetSchedule.some(item => item.date === standardizedDate && item.completed);
-            const itemDate = new Date(aiItem.date);
-            const compareItemDate = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
-            const compareToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-            if (compareItemDate < compareToday) return false;
+            if (standardizedDate < todayStr) return false; // 安全な文字列比較で今日以降の提案のみに限定
             return !alreadyCompleted;
           })
           .map(aiItem => {
@@ -2744,6 +2810,57 @@ ${getUserProfileContext()}
               </div>
             </div>
           )}
+
+          {/* データのバックアップと復元 */}
+          <div className={styles.savedMenusCard} style={{ marginTop: "20px", background: "rgba(255, 255, 255, 0.02)", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
+            <h3 style={{ fontSize: "0.9rem", fontWeight: "700", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", paddingBottom: "8px", marginBottom: "12px" }}>
+              💾 データのバックアップ ＆ 復元
+            </h3>
+            <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: "1.4" }}>
+              データはブラウザ（LocalStorage）に保存されています。キャッシュクリア時のデータ消失を防ぐため、定期的なバックアップや、別端末への引き継ぎにご利用ください。
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <button 
+                className={styles.btnSecondary} 
+                style={{ 
+                  width: "100%", 
+                  padding: "10px", 
+                  fontSize: "0.75rem", 
+                  fontWeight: "bold",
+                  background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)" 
+                }}
+                onClick={exportData}
+              >
+                📥 全データをバックアップ（JSON書き出し）
+              </button>
+              
+              <div style={{ 
+                borderTop: "1px dashed rgba(255, 255, 255, 0.05)", 
+                paddingTop: "12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px"
+              }}>
+                <label style={{ fontSize: "0.7rem", fontWeight: "700", color: "var(--color-primary)" }}>
+                  バックアップファイルから復元
+                </label>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <input 
+                    type="file" 
+                    accept=".json"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        importData(file);
+                        e.target.value = "";
+                      }
+                    }}
+                    style={{ fontSize: "0.7rem", flex: 1, color: "var(--text-muted)" }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
