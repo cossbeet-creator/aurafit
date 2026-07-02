@@ -292,12 +292,19 @@ export default function Home() {
       
       try {
         if (savedMenus) {
-          loadedMenus = JSON.parse(savedMenus);
-          setMenus(loadedMenus);
+          const parsed = JSON.parse(savedMenus);
+          if (validateMenus(parsed)) {
+            loadedMenus = parsed;
+            setMenus(loadedMenus);
+          } else {
+            console.error("Loaded menus structure is invalid");
+            alert("⚠️ 保存されている基本メニューデータが不完全です。破損防止のため、初期化を保留します。バックアップがある場合は復元してください。");
+          }
         }
       } catch (e) {
-        console.error("Failed to parse savedMenus, resetting...", e);
-        localStorage.removeItem("fitrum_menus");
+        console.error("Failed to parse savedMenus, preserving corrupted data...", e);
+        localStorage.setItem("fitrum_corrupted_menus", savedMenus || "");
+        alert("⚠️ 基本メニューデータの読み込みに失敗しました。データを退避用キー（fitrum_corrupted_menus）にコピーしました。");
       }
       
       try {
@@ -310,15 +317,17 @@ export default function Home() {
       try {
         if (savedSchedule) setSchedule(JSON.parse(savedSchedule));
       } catch (e) {
-        console.error("Failed to parse savedSchedule, resetting...", e);
-        localStorage.removeItem("fitrum_schedule");
+        console.error("Failed to parse savedSchedule, preserving corrupted data...", e);
+        localStorage.setItem("fitrum_corrupted_schedule", savedSchedule || "");
+        alert("⚠️ スケジュール（実績含む）データの読み込みに失敗しました。データを退避用キー（fitrum_corrupted_schedule）にコピーしました。");
       }
 
       try {
         if (savedDateStates) setDateStates(JSON.parse(savedDateStates));
       } catch (e) {
-        console.error("Failed to parse savedDateStates, resetting...", e);
-        localStorage.removeItem("fitrum_date_states");
+        console.error("Failed to parse savedDateStates, preserving corrupted data...", e);
+        localStorage.setItem("fitrum_corrupted_date_states", savedDateStates || "");
+        alert("⚠️ 日程設定データの読み込みに失敗しました。データを退避用キー（fitrum_corrupted_date_states）にコピーしました。");
       }
 
       if (savedStreak) {
@@ -335,22 +344,23 @@ export default function Home() {
           setUserProfile(parsed);
         }
       } catch (e) {
-        console.error("Failed to parse savedProfile, resetting...", e);
-        localStorage.removeItem("fitrum_user_profile");
+        console.error("Failed to parse savedProfile, preserving corrupted data...", e);
+        localStorage.setItem("fitrum_corrupted_user_profile", savedProfile || "");
+        alert("⚠️ ユーザーカルテデータの読み込みに失敗しました。データを退避用キー（fitrum_corrupted_user_profile）にコピーしました。");
       }
 
       try {
         if (savedChatHistory) setBuilderChatHistory(JSON.parse(savedChatHistory));
       } catch (e) {
-        console.error("Failed to parse savedChatHistory, resetting...", e);
-        localStorage.removeItem("fitrum_builder_chat_history");
+        console.error("Failed to parse savedChatHistory, preserving corrupted data...", e);
+        localStorage.setItem("fitrum_corrupted_builder_chat_history", savedChatHistory || "");
       }
 
       try {
         if (savedMenuHistory) setMenuHistory(JSON.parse(savedMenuHistory));
       } catch (e) {
-        console.error("Failed to parse savedMenuHistory, resetting...", e);
-        localStorage.removeItem("fitrum_menu_history");
+        console.error("Failed to parse savedMenuHistory, preserving corrupted data...", e);
+        localStorage.setItem("fitrum_corrupted_menu_history", savedMenuHistory || "");
       }
 
       const today = new Date();
@@ -459,6 +469,32 @@ export default function Home() {
       }
     };
     reader.readAsText(file);
+  };
+
+  // 基本メニュー（Menus）の妥当性をチェックするバリデーション
+  const validateMenus = (testMenus: any): boolean => {
+    if (!testMenus || typeof testMenus !== "object" || Array.isArray(testMenus)) {
+      return false;
+    }
+    const keys = Object.keys(testMenus);
+    if (keys.length === 0) {
+      return false;
+    }
+    for (const key of keys) {
+      const list = testMenus[key];
+      if (!Array.isArray(list)) {
+        return false;
+      }
+      if (list.length === 0) {
+        return false; // 空のルーティンは無効
+      }
+      for (const ex of list) {
+        if (!ex || typeof ex !== "object" || !ex.name || typeof ex.name !== "string") {
+          return false;
+        }
+      }
+    }
+    return true;
   };
 
   // メニュー変更履歴を保存するヘルパー
@@ -796,24 +832,47 @@ ${scheduleInstruction.trim() ? `
         // AI提案の日程と既存の日程を安全にマージする
         const aiProposal: ScheduleItem[] = data.schedule;
 
-        // 保護対象（期間外のもの、今日より過去のもの、または期間内だがすでに完了しているもの）を抽出
+        // 保護対象（期間外のもの、過去のもの、完了済み、入力中、またはカスタム調整済みのもの）を抽出
         const preservedSchedule = targetSchedule.filter(item => {
           const isInRange = filterByRange(item.date);
           
           if (!isInRange) return true;
-          if (item.date < todayStr) return true; // 安全な文字列比較で過去日付を保護
-          if (item.completed) return true;
+          if (item.date < todayStr) return true; // 過去日付を保護
+          if (item.completed) return true;       // 完了済みを保護
+
+          // 入力中の一時保存データ（オートセーブ）がある日を保護
+          const tempKey = `fitrum_temp_exercise_records_${item.date}_${item.workoutName}`;
+          const hasTempData = typeof window !== "undefined" && localStorage.getItem(tempKey) !== null;
+          if (hasTempData) return true;
+
+          // AI体調調整や手動種目追加などのカスタム種目設定がある日を保護
+          if (item.customExercises && item.customExercises.length > 0) return true;
+
           return false;
         });
 
-        // AI提案の中で、すでに完了している既存の予定とバッティングしないものを抽出し、バリデーションを行う
+        // AI提案の中で、保護対象（完了、一時保存あり、カスタム調整あり）とバッティングしないものを抽出し、バリデーションを行う
         const filteredAiProposal = aiProposal
           .filter(aiItem => {
             if (!aiItem.date || isNaN(Date.parse(aiItem.date))) return false;
             const standardizedDate = formatDate(new Date(aiItem.date));
-            const alreadyCompleted = targetSchedule.some(item => item.date === standardizedDate && item.completed);
-            if (standardizedDate < todayStr) return false; // 安全な文字列比較で今日以降の提案のみに限定
-            return !alreadyCompleted;
+            
+            // 保護対象（完了済み、一時保存データあり、カスタム種目あり）の日程と被っているかチェック
+            const isPreserved = targetSchedule.some(item => {
+              if (item.date !== standardizedDate) return false;
+              if (item.completed) return true;
+              
+              const tempKey = `fitrum_temp_exercise_records_${item.date}_${item.workoutName}`;
+              const hasTempData = typeof window !== "undefined" && localStorage.getItem(tempKey) !== null;
+              if (hasTempData) return true;
+              
+              if (item.customExercises && item.customExercises.length > 0) return true;
+              
+              return false;
+            });
+
+            if (standardizedDate < todayStr) return false; // 今日以降の提案のみに限定
+            return !isPreserved;
           })
           .map(aiItem => {
             const standardizedDate = formatDate(new Date(aiItem.date));
@@ -1447,11 +1506,17 @@ ${customAdjustmentNote ? `- 追加の状況・要望（最優先）: "${customAd
         try {
           const parsedData = JSON.parse(trimmedText);
           if (parsedData.menus || parsedData.profile) {
-            if (parsedData.menus && Object.keys(menus).length > 0) {
-              const confirmed = window.confirm(
-                "警告: 現在設定されているすべての基本メニューが、貼り付けられたJSONメニューで上書き（上書き消去）されます。\nよろしいですか？"
-              );
-              if (!confirmed) return;
+            if (parsedData.menus) {
+              if (!validateMenus(parsedData.menus)) {
+                alert("⚠️ 貼り付けられたJSONメニューの構造が不正、または中身が空です。インポートを中止しました。");
+                return;
+              }
+              if (Object.keys(menus).length > 0) {
+                const confirmed = window.confirm(
+                  "警告: 現在設定されているすべての基本メニューが、貼り付けられたJSONメニューで上書き（上書き消去）されます。\nよろしいですか？"
+                );
+                if (!confirmed) return;
+              }
             }
 
             let finalMenus = menus;
@@ -1613,14 +1678,21 @@ ${JSON.stringify(menus, null, 2)}
       saveToLocalStorage("fitrum_builder_chat_history", finalHistory);
 
       if ((builderAction === "create" || builderAction === "import") && (data.menus || data.profile)) {
-        if (data.menus && Object.keys(menus).length > 0) {
-          const actionName = builderAction === "create" ? "AI新規作成" : "過去メニュー取り込み";
-          const confirmed = window.confirm(
-            `警告: 現在設定されているすべての基本メニューが、${actionName}によって作成されたメニューで上書き（上書き消去）されます。\nよろしいですか？`
-          );
-          if (!confirmed) {
+        if (data.menus) {
+          if (!validateMenus(data.menus)) {
+            alert("⚠️ AIが生成したメニュー構造が不正、または空でした。適用を中止しました。");
             setLoading(false);
             return;
+          }
+          if (Object.keys(menus).length > 0) {
+            const actionName = builderAction === "create" ? "AI新規作成" : "過去メニュー取り込み";
+            const confirmed = window.confirm(
+              `警告: 現在設定されているすべての基本メニューが、${actionName}によって作成されたメニューで上書き（上書き消去）されます。\nよろしいですか？`
+            );
+            if (!confirmed) {
+              setLoading(false);
+              return;
+            }
           }
         }
         let finalMenus = menus;
@@ -1646,6 +1718,11 @@ ${JSON.stringify(menus, null, 2)}
         // 未来の予定の自動再構築
         buildScheduleWithAI(finalMenus, schedule);
       } else if (builderAction === "improve" && data.updatedMenus) {
+        if (!validateMenus(data.updatedMenus)) {
+          alert("⚠️ AIが生成した改善メニューの構造が不正、または空でした。適用を中止しました。");
+          setLoading(false);
+          return;
+        }
         setMenus(data.updatedMenus);
         setEditableMenus(JSON.parse(JSON.stringify(data.updatedMenus)));
         saveToLocalStorage("fitrum_menus", data.updatedMenus);
@@ -1843,6 +1920,11 @@ ${getUserProfileContext()}
         delete cleaned[key];
       }
     });
+
+    if (!validateMenus(cleaned)) {
+      alert("⚠️ 保存できません。メニューの構造が不正であるか、種目が1つも登録されていないルーティンが存在します。各ルーティンに最低1つ以上の種目を設定してください。");
+      return;
+    }
 
     setMenus(cleaned);
     setEditableMenus(JSON.parse(JSON.stringify(cleaned)));
