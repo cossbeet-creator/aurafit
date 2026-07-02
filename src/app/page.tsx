@@ -173,6 +173,7 @@ export default function Home() {
   const [exerciseRecords, setExerciseRecords] = useState<ExerciseRecord[]>([]);
   const [activeAdjustmentReason, setActiveAdjustmentReason] = useState<string>("");
   const [loadedDateStr, setLoadedDateStr] = useState<string>("");
+  const [loadedWorkoutName, setLoadedWorkoutName] = useState<string>("");
   const [customAdjustmentNote, setCustomAdjustmentNote] = useState<string>("");
 
   // --- AI調整（体調・時間）のポップアップ用状態 ---
@@ -946,15 +947,35 @@ ${scheduleInstruction.trim() ? `
 
     if (tempRecordsStr && (!scheduled || !scheduled.completed)) {
       try {
-        const parsed = JSON.parse(tempRecordsStr);
+        let parsed = JSON.parse(tempRecordsStr);
         if (parsed && parsed.length > 0) {
-          if (scheduled) {
-            setCurrentWorkoutName(scheduled.workoutName);
-            setActiveAdjustmentReason(scheduled.adjustmentReason || "");
+          // 汚染検知：一時保存された種目が、予定されているメニューの想定種目と完全に不一致していないか検証
+          if (scheduled && menus[scheduled.workoutName]) {
+            const expectedExercises = menus[scheduled.workoutName];
+            const tempExerciseNames = parsed.map((ex: any) => ex.name);
+            const expectedExerciseNames = expectedExercises.map(ex => ex.name);
+            
+            // 種目名の重複が1つもない場合は、バグによる古い別メニューの汚染データとみなして削除
+            const hasMatch = tempExerciseNames.some((name: string) => expectedExerciseNames.includes(name));
+            if (!hasMatch && expectedExerciseNames.length > 0) {
+              console.warn("Detected corrupted temp records from another workout. Clearing...", selectedDateStr);
+              if (tempKey) {
+                localStorage.removeItem(tempKey);
+              }
+              tempRecordsStr = null; // nullにして初期種目をロードさせる
+            }
           }
-          setExerciseRecords(parsed);
-          setLoadedDateStr(selectedDateStr); // 読み込み完了日付を記録
-          return; // 一時データから復元した場合は以降の通常初期化をスキップ
+
+          if (tempRecordsStr) {
+            if (scheduled) {
+              setCurrentWorkoutName(scheduled.workoutName);
+              setActiveAdjustmentReason(scheduled.adjustmentReason || "");
+            }
+            setExerciseRecords(parsed);
+            setLoadedDateStr(selectedDateStr); // 読み込み完了日付を記録
+            setLoadedWorkoutName(scheduled ? scheduled.workoutName : ""); // 読み込み完了メニュー名を記録
+            return; // 一時データから復元した場合は以降の通常初期化をスキップ
+          }
         }
       } catch (e) {
         console.error("Failed to parse tempRecords", e);
@@ -1008,6 +1029,7 @@ ${scheduleInstruction.trim() ? `
       setActiveAdjustmentReason("");
     }
     setLoadedDateStr(selectedDateStr); // 初期化完了日付を記録
+    setLoadedWorkoutName(scheduled ? scheduled.workoutName : ""); // 初期化完了メニュー名を記録
   }, [selectedDateStr, schedule, menus, isEditingPast]);
 
   // 実績入力中の一時保存（タスクキル・リロード対策）
@@ -1018,6 +1040,9 @@ ${scheduleInstruction.trim() ? `
     
     const scheduled = schedule.find(item => item.date === selectedDateStr);
     if (!scheduled) return; // 予定がない日は一時保存しない
+
+    // メニュー切り替え時に古いメニューの種目が新しいメニューの一時保存に誤って上書き保存されるのを防ぐガード
+    if (scheduled.workoutName !== loadedWorkoutName) return;
     
     const isCompleted = scheduled.completed;
     const tempKey = `fitrum_temp_exercise_records_${selectedDateStr}_${scheduled.workoutName}`;
@@ -1028,7 +1053,7 @@ ${scheduleInstruction.trim() ? `
       // 完了済みまたは過去編集モードの場合は一時保存をクリーンアップ
       localStorage.removeItem(tempKey);
     }
-  }, [exerciseRecords, selectedDateStr, schedule, isEditingPast, loadedDateStr]);
+  }, [exerciseRecords, selectedDateStr, schedule, isEditingPast, loadedDateStr, loadedWorkoutName]);
 
   // 実績入力値の変更ハンドラー
   const handleSetChange = (exIndex: number, setIndex: number, field: "weight" | "reps", value: number) => {
