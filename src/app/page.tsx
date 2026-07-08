@@ -652,6 +652,56 @@ export default function Home() {
     setHasUnsavedDateChanges(true);
   };
 
+  // 手動で特定の日にメニューを配置する
+  const manuallyAssignWorkout = (dateStr: string, workoutName: string) => {
+    // 完了済みの予定は手動変更不可
+    const existing = schedule.find(item => item.date === dateStr);
+    if (existing && existing.completed) {
+      alert("完了済みのトレーニング予定は変更できません。");
+      return;
+    }
+
+    const updatedSchedule = [...schedule];
+    const idx = updatedSchedule.findIndex(item => item.date === dateStr);
+
+    if (idx >= 0) {
+      updatedSchedule[idx] = {
+        ...updatedSchedule[idx],
+        workoutName: workoutName,
+        isTemp: true,
+        // 手動変更があった場合、以前のカスタム調整（体調調整等）はリセット
+        customExercises: undefined,
+        adjustmentReason: undefined
+      };
+    } else {
+      updatedSchedule.push({
+        date: dateStr,
+        workoutName: workoutName,
+        isTemp: true
+      });
+    }
+
+    // 日付順にソート
+    updatedSchedule.sort((a, b) => a.date.localeCompare(b.date));
+
+    setSchedule(updatedSchedule);
+    saveToLocalStorage("fitrum_schedule", updatedSchedule);
+  };
+
+  // 手動で特定の日のメニュー予定を削除（クリア）する
+  const manuallyRemoveWorkout = (dateStr: string) => {
+    const existing = schedule.find(item => item.date === dateStr);
+    if (existing && existing.completed) {
+      alert("完了済みのトレーニング予定は削除できません。");
+      return;
+    }
+
+    const updatedSchedule = schedule.filter(item => item.date !== dateStr);
+
+    setSchedule(updatedSchedule);
+    saveToLocalStorage("fitrum_schedule", updatedSchedule);
+  };
+
   // 日付状態トグル
   const toggleDateState = (dateStr: string) => {
     const current = dateStates[dateStr] || "DEFAULT";
@@ -700,19 +750,130 @@ export default function Home() {
     return new GoogleGenAI({ apiKey });
   };
 
-  // 3. AIスケジュール構築 (Tab 1)
+  // 決定論的スケジューラー：基本ルールに従ってカレンダーにメニューを配置する
+  const buildDeterministicSchedule = (
+    routineKeys: string[],
+    eligibleDates: string[],
+    lastCompletedWorkout: string,
+    forcedPlacements: Record<string, string>,
+    minGapDays: number = 2
+  ): ScheduleItem[] => {
+    const result: Record<string, string> = {};
+
+    // 1. 強制配置の適用（候補日であるか、有効なメニュー名であるかをバリデーション）
+    for (const [dateStr, workoutName] of Object.entries(forcedPlacements)) {
+      if (eligibleDates.includes(dateStr) && routineKeys.includes(workoutName)) {
+        result[dateStr] = workoutName;
+      }
+    }
+
+    // 2. ローテーションの初期開始位置を決定
+    let rotationIndex = 0;
+    if (lastCompletedWorkout && routineKeys.includes(lastCompletedWorkout)) {
+      const lastIdx = routineKeys.indexOf(lastCompletedWorkout);
+      rotationIndex = (lastIdx + 1) % routineKeys.length;
+    }
+
+    // 各メニューの最終配置日（初期値は直近の完了メニュー日などで設定可能だが、安全のため空から開始、または直近完了日を入れる）
+    const lastPlacedDate: Record<string, string> = {};
+    
+    // 直近完了した実績日程を反映
+    const sortedCompletedItems = [...schedule]
+      .filter(item => item.completed && item.workoutName)
+      .sort((a, b) => b.date.localeCompare(a.date)); // 直近順
+    
+    for (const key of routineKeys) {
+      const matchedItem = sortedCompletedItems.find(item => item.workoutName === key);
+      if (matchedItem) {
+        lastPlacedDate[key] = matchedItem.date;
+      }
+    }
+
+    // 強制配置分も lastPlacedDate に仮登録しておく
+    for (const [dateStr, workoutName] of Object.entries(result)) {
+      if (!lastPlacedDate[workoutName] || dateStr > lastPlacedDate[workoutName]) {
+        lastPlacedDate[workoutName] = dateStr;
+      }
+    }
+
+    const dateDiffInDays = (date1Str: string, date2Str: string): number => {
+      const d1 = new Date(date1Str);
+      const d2 = new Date(date2Str);
+      // 時差の影響を受けないようにUTCベースで計算
+      const utc1 = Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate());
+      const utc2 = Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate());
+      const diffTime = Math.abs(utc2 - utc1);
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    };
+
+    // 3. 自動配置（eligibleDatesを日付順に走査）
+    const sortedEligibleDates = [...eligibleDates].sort((a, b) => a.localeCompare(b));
+
+    for (const dateStr of sortedEligibleDates) {
+      // すでに強制配置がある日はそのメニューを正として、次のローテーション開始位置をそのメニューの次に進める
+      if (result[dateStr]) {
+        const currentWorkoutName = result[dateStr];
+        const currentIdx = routineKeys.indexOf(currentWorkoutName);
+        rotationIndex = (currentIdx + 1) % routineKeys.length;
+        lastPlacedDate[currentWorkoutName] = dateStr;
+        continue;
+      }
+
+      // ループで中2日のチェックを行い、配置可能なメニューが見つかるまでローテーションを進める
+      let attempts = 0;
+      let placed = false;
+
+      while (attempts < routineKeys.length) {
+        const candidateMenu = routineKeys[rotationIndex];
+        
+        // 中N日（中2日）の判定
+        let isGapValid = true;
+        if (lastPlacedDate[candidateMenu]) {
+          const gap = dateDiffInDays(lastPlacedDate[candidateMenu], dateStr);
+          if (gap <= minGapDays) {
+            isGapValid = false;
+          }
+        }
+
+        if (isGapValid) {
+          result[dateStr] = candidateMenu;
+          lastPlacedDate[candidateMenu] = dateStr;
+          rotationIndex = (rotationIndex + 1) % routineKeys.length;
+          placed = true;
+          break;
+        } else {
+          // 間隔ルールを満たさない場合は、ローテーションを次に進めてリトライ
+          rotationIndex = (rotationIndex + 1) % routineKeys.length;
+          attempts++;
+        }
+      }
+
+      // もしすべてのルーティンが中2日ルールに違反する場合、この日には何も配置せずスキップ
+      if (!placed) {
+        console.warn(`No valid workout could be placed on ${dateStr} due to interval constraints.`);
+      }
+    }
+
+    // ScheduleItem[] 形式に変換
+    return Object.entries(result).map(([dateStr, workoutName]) => ({
+      date: dateStr,
+      workoutName,
+      isTemp: true
+    }));
+  };
+
+  // 3. AIスケジュール構築 (Tab 1) - ハイブリッド（指示抽出: AI, 配置: プログラム）
   const buildScheduleWithAI = async (
     targetMenus: Menus = menus,
     targetSchedule: ScheduleItem[] = schedule,
     targetDateStates: DateStates = dateStates
   ) => {
-    if (!apiKey) {
-      alert("AIスケジュール構築にはAPIキーの設定が必要です。");
+    if (scheduleInstruction.trim() && !apiKey) {
+      alert("AIへの追加指示がある場合は、APIキーの設定が必要です。");
       return;
     }
     setLoading(true);
     try {
-      const ai = getAiInstance();
       const today = new Date();
       const end = new Date();
       end.setDate(today.getDate() + 29);
@@ -738,8 +899,6 @@ export default function Home() {
         .filter(k => targetDateStates[k] === "CONFIRMED_GO" && filterFutureOnly(k));
       const maybeDays = Object.keys(targetDateStates)
         .filter(k => targetDateStates[k] === "MAYBE" && filterFutureOnly(k));
-      const noDays = Object.keys(targetDateStates)
-        .filter(k => targetDateStates[k] === "CONFIRMED_NO" && filterFutureOnly(k));
 
       if (confirmedDays.length === 0 && maybeDays.length === 0) {
         alert("カレンダー上で「👌行ける」または「❓微妙」の日を1日以上設定してから実行してください。");
@@ -749,7 +908,7 @@ export default function Home() {
 
       const routineKeys = Object.keys(targetMenus);
 
-      // 直近の完了メニューを特定するロジック（A, B, C...のローテーションバトン引き継ぎ用）
+      // 1. 直近の完了メニューを特定するロジック（A, B, C...のローテーションバトン引き継ぎ用）
       let lastCompletedWorkout = "";
       const sortedCompletedItems = [...targetSchedule]
         .filter(item => item.completed && item.workoutName)
@@ -765,136 +924,136 @@ export default function Home() {
         lastCompletedWorkout = routineKeys[0] || "A";
       }
 
-      const prompt = `
-あなたの役割は、科学的なエビデンス（運動生理学・スポーツ科学）に基づく一流のパーソナルトレーナーです。
-ユーザーが指定した日程に対して、登録された「基本メニュー」のルーティン（A, B, Cなど）をカレンダーへ最適に配置してください。
+      // 2. ユーザー追加指示のAI抽出処理 (指示がある場合のみ Gemini を呼び出す)
+      let forcedPlacements: Record<string, string> = {};
 
-${getUserProfileContext()}
+      if (scheduleInstruction.trim()) {
+        const ai = getAiInstance();
+        const systemInstruction = "あなたはユーザーの筋トレ予定への個別要望から、特定の日付にどのメニューを配置すべきかを抽出するJSONパーサーです。";
+        const prompt = `
+ユーザーは「基本メニューのルーティン名: [${routineKeys.join(", ")}]」を利用しています。
+今日の日付は「${todayStr}」です。
+ユーザーから以下の追加指示がありました:
+"${scheduleInstruction.trim()}"
 
-【ユーザーデータ】
-- 確定している行ける日 (confirmedDays): ${JSON.stringify(confirmedDays)}
-- 行けるかもしれない微妙な日 (maybeDays): ${JSON.stringify(maybeDays)}
-- 絶対に行けないオフ日 (noDays): ${JSON.stringify(noDays)}
-- 基本メニューのルーティン名: [${routineKeys.join(", ")}]
-- 直近で完了した基本メニュー: "${lastCompletedWorkout}"
-- 開始日: ${formatDate(today)}
-- 終了日: ${formatDate(end)} (開始日から1ヶ月後)
-
-【スケジュール配置ルール】
-1. ユーザーが設定した「確定している行ける日 (confirmedDays)」および「行けるかもしれない微妙な日 (maybeDays)」にのみトレーニングを配置してください。未定の日やオフの日には一切配置しないでください。
-2. 直近で完了した基本メニューの「次のメニュー（例: 直近がAならB）」から開始し、ルーティンの順序（例: A ➔ B ➔ C ➔ A...）を崩さずに日付順に割り当ててください。
-3. 筋肉の回復を最優先するため、同じメニュー（同じアルファベット、例: AとA、BとB、CとC）の間は、必ず中2日以上（中48〜72時間以上）の間隔を空けて配置してください。
-   - 例：月曜日に「A」を配置した場合、次の「A」は木曜日以降にしか配置できません（火曜日と水曜日の間はAを配置できません）。
-   - もし、次に配置すべきメニューが間隔ルール（中2日）を満たせない場合は、その日には配置を行わず（空欄にしてスキップ）、次の👌/❓の日にスライドして配置してください。
-4. 必ず今日（開始日）以降の日程のみに配置し、過去の日付には一切配置しないでください。
-${scheduleInstruction.trim() ? `
-【ユーザーからの追加指示（最優先指示事項）】
-- "${scheduleInstruction.trim()}"
-- このユーザーからの指示は、他の「スケジュール配置ルール」よりも最優先で反映させてください。
-- 指示によって「ルール2（ローテーション順序）」や「ルール3（中2日の間隔）」に一部の例外（順序の前後や中1日の間隔になるなど）が発生したとしても、指定された日程のメニュー配置を最優先してください。ただし、同一メニューが連日（二日連続など）配置されることだけは、回復を考慮して避けてください。
-` : ""}
-
-以下のJSONフォーマットで回答してください。余計な説明テキストは一切含めず、純粋なJSONのみを返してください。
+この指示を解析し、特定の日付に対してどのメニューを強制的に配置すべきかを抽出してください。
 
 【出力フォーマット】
+以下のJSONフォーマットのみを返却してください。余計な説明やマークダウン（\`\`\`json など）は一切含めないでください。
 {
-  "schedule": [
-    {
-      "date": "YYYY-MM-DD",
-      "workoutName": "A",
-      "isTemp": true
-    }
-  ]
+  "forcedPlacements": {
+    "YYYY-MM-DD": "メニュー名"
+  },
+  "parseSuccess": true,
+  "parseMessage": "解析結果の簡潔な説明"
 }
+
+もし指示があいまい、あるいは日付やメニューを特定できない場合は、"parseSuccess": false とし、"parseMessage" に理由を記載してください。
 `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-flash-lite",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          systemInstruction: "あなたはJSONフォーマットでスケジュールデータのみを返却する筋トレ支援APIです。",
-          temperature: 0.0,
-        },
-      });
-
-      let data;
-      try {
-        data = JSON.parse(response.text || "{}");
-        console.log("AI Response Schedule data:", data);
-      } catch (parseErr: any) {
-        console.error("JSON Parse Error. Raw text:", response.text, parseErr);
-        alert(`AIからのデータ解析に失敗しました。\n詳細: ${parseErr.message}\n生データ: ${response.text?.substring(0, 150)}`);
-        setLoading(false);
-        return;
-      }
-
-      if (data.schedule) {
-        // AI提案の日程と既存の日程を安全にマージする
-        const aiProposal: ScheduleItem[] = data.schedule;
-
-        // 保護対象（期間外のもの、過去のもの、完了済み、入力中、またはカスタム調整済みのもの）を抽出
-        const preservedSchedule = targetSchedule.filter(item => {
-          const isInRange = filterByRange(item.date);
-          
-          if (!isInRange) return true;
-          if (item.date < todayStr) return true; // 過去日付を保護
-          if (item.completed) return true;       // 完了済みを保護
-
-          // 入力中の一時保存データ（オートセーブ）がある日を保護
-          const tempKey = `fitrum_temp_exercise_records_${item.date}_${item.workoutName}`;
-          const hasTempData = typeof window !== "undefined" && localStorage.getItem(tempKey) !== null;
-          if (hasTempData) return true;
-
-          // AI体調調整や手動種目追加などのカスタム種目設定がある日を保護
-          if (item.customExercises && item.customExercises.length > 0) return true;
-
-          return false;
+        const response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction,
+            temperature: 0.0,
+          },
         });
 
-        // AI提案の中で、保護対象（完了、一時保存あり、カスタム調整あり）とバッティングしないものを抽出し、バリデーションを行う
-        const filteredAiProposal = aiProposal
-          .filter(aiItem => {
-            if (!aiItem.date || isNaN(Date.parse(aiItem.date))) return false;
-            const standardizedDate = formatDate(new Date(aiItem.date));
-            
-            // 保護対象（完了済み、一時保存データあり、カスタム種目あり）の日程と被っているかチェック
-            const isPreserved = targetSchedule.some(item => {
-              if (item.date !== standardizedDate) return false;
-              if (item.completed) return true;
-              
-              const tempKey = `fitrum_temp_exercise_records_${item.date}_${item.workoutName}`;
-              const hasTempData = typeof window !== "undefined" && localStorage.getItem(tempKey) !== null;
-              if (hasTempData) return true;
-              
-              if (item.customExercises && item.customExercises.length > 0) return true;
-              
-              return false;
-            });
+        try {
+          const parsed = JSON.parse(response.text || "{}");
+          if (parsed.parseSuccess && parsed.forcedPlacements) {
+            forcedPlacements = parsed.forcedPlacements;
+            console.log("AI Extracted Placements:", forcedPlacements);
+          } else {
+            console.warn("AI parse failed or returned success=false:", parsed.parseMessage);
+            if (!confirm(`AIが追加指示を正しく解釈できませんでした。\n理由: ${parsed.parseMessage || "不明"}\n\n追加指示なしの基本ルール（ローテーション優先）でスケジュールを構築しますか？`)) {
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (parseErr: any) {
+          console.error("Failed to parse AI response:", response.text, parseErr);
+          if (!confirm("AIからの応答の解析に失敗しました。追加指示なしの基本ルールでスケジュールを構築しますか？")) {
+            setLoading(false);
+            return;
+          }
+        }
+      }
 
-            if (standardizedDate < todayStr) return false; // 今日以降の提案のみに限定
-            return !isPreserved;
-          })
-          .map(aiItem => {
-            const standardizedDate = formatDate(new Date(aiItem.date));
-            return {
-              ...aiItem,
-              date: standardizedDate,
-              customExercises: undefined // シンプル設計では全身法カスタム種目は不要
-            };
+      // 3. 決定論的アルゴリズムによるスケジュール提案の生成
+      const eligibleDates = [...confirmedDays, ...maybeDays];
+      const proposedSchedule = buildDeterministicSchedule(
+        routineKeys,
+        eligibleDates,
+        lastCompletedWorkout,
+        forcedPlacements,
+        2 // 中2日
+      );
+
+      // 4. 提案の日程と既存の日程を安全にマージする（保護対象の保護）
+      const preservedSchedule = targetSchedule.filter(item => {
+        const isInRange = filterByRange(item.date);
+        
+        if (!isInRange) return true;
+        if (item.date < todayStr) return true; // 過去日付を保護
+        if (item.completed) return true;       // 完了済みを保護
+
+        // 入力中の一時保存データ（オートセーブ）がある日を保護
+        const tempKey = `fitrum_temp_exercise_records_${item.date}_${item.workoutName}`;
+        const hasTempData = typeof window !== "undefined" && localStorage.getItem(tempKey) !== null;
+        if (hasTempData) return true;
+
+        // AI体調調整や手動種目追加などのカスタム種目設定がある日を保護
+        if (item.customExercises && item.customExercises.length > 0) return true;
+
+        return false;
+      });
+
+      // 提案の中で、保護対象（完了、一時保存あり、カスタム調整あり）とバッティングしないものを抽出しマージする
+      const filteredProposal = proposedSchedule
+        .filter(pItem => {
+          if (!pItem.date || isNaN(Date.parse(pItem.date))) return false;
+          const standardizedDate = formatDate(new Date(pItem.date));
+          
+          // 保護対象日程と被っているかチェック
+          const isPreserved = targetSchedule.some(item => {
+            if (item.date !== standardizedDate) return false;
+            if (item.completed) return true;
+            
+            const tempKey = `fitrum_temp_exercise_records_${item.date}_${item.workoutName}`;
+            const hasTempData = typeof window !== "undefined" && localStorage.getItem(tempKey) !== null;
+            if (hasTempData) return true;
+            
+            if (item.customExercises && item.customExercises.length > 0) return true;
+            
+            return false;
           });
 
-        // マージして日付順にソート
-        const mergedSchedule = [...preservedSchedule, ...filteredAiProposal];
-        mergedSchedule.sort((a, b) => a.date.localeCompare(b.date));
+          if (standardizedDate < todayStr) return false; // 今日以降の提案のみに限定
+          return !isPreserved;
+        })
+        .map(pItem => {
+          const standardizedDate = formatDate(new Date(pItem.date));
+          return {
+            ...pItem,
+            date: standardizedDate,
+            customExercises: undefined
+          };
+        });
 
-        setSchedule(mergedSchedule);
-        saveToLocalStorage("fitrum_schedule", mergedSchedule);
-        setHasUnsavedDateChanges(false);
-      }
+      // マージして日付順にソート
+      const mergedSchedule = [...preservedSchedule, ...filteredProposal];
+      mergedSchedule.sort((a, b) => a.date.localeCompare(b.date));
+
+      setSchedule(mergedSchedule);
+      saveToLocalStorage("fitrum_schedule", mergedSchedule);
+      setHasUnsavedDateChanges(false);
+
     } catch (err: any) {
       console.error(err);
-      alert(`AIスケジュールの構築に失敗しました。\n詳細: ${err.message || err}`);
+      alert(`スケジュールの構築に失敗しました。\n詳細: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
@@ -2142,6 +2301,62 @@ ${getUserProfileContext()}
                       }}
                       title="未定"
                     >未</button>
+                  </div>
+                </div>
+              )}
+
+              {selectedDateStr && (
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between", 
+                  alignItems: "center", 
+                  gap: "8px", 
+                  background: "rgba(255,255,255,0.02)", 
+                  padding: "6px 12px", 
+                  borderRadius: "12px", 
+                  border: "1px solid rgba(255,255,255,0.05)" 
+                }}>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    選択日のメニュー:
+                  </span>
+                  <div style={{ display: "flex", gap: "4px", background: "rgba(255,255,255,0.03)", padding: "2px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.05)", alignItems: "center" }}>
+                    {Object.keys(menus).map(name => {
+                      const isCurrent = schedule.some(item => item.date === selectedDateStr && item.workoutName === name);
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => manuallyAssignWorkout(selectedDateStr, name)}
+                          style={{
+                            background: isCurrent ? "var(--accent-primary)" : "transparent",
+                            border: "none",
+                            borderRadius: "12px",
+                            padding: "2px 8px",
+                            fontSize: "0.7rem",
+                            fontWeight: "bold",
+                            color: "#fff",
+                            cursor: "pointer",
+                            opacity: isCurrent ? 1 : 0.4
+                          }}
+                        >
+                          {name}
+                        </button>
+                      );
+                    })}
+                    <button
+                      onClick={() => manuallyRemoveWorkout(selectedDateStr)}
+                      style={{
+                        background: "rgba(255,255,255,0.1)",
+                        border: "none",
+                        borderRadius: "12px",
+                        padding: "2px 6px",
+                        fontSize: "0.65rem",
+                        color: "#ff453a",
+                        cursor: "pointer"
+                      }}
+                      title="メニュー予定を解除"
+                    >
+                      クリア
+                    </button>
                   </div>
                 </div>
               )}
